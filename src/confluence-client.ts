@@ -1,10 +1,13 @@
-import axios from "axios";
 import type { AxiosInstance } from "axios";
-import type { ConfluenceConfig, ConfluencePage, PageUpdateRequest } from "./types.js";
+import axios from "axios";
+import type {
+  ConfluenceConfig,
+  ConfluencePage,
+  PageUpdateRequest,
+} from "./types.js";
 
 export class ConfluenceClient {
   private api: AxiosInstance;
-  private config: ConfluenceConfig;
 
   constructor(config: ConfluenceConfig) {
     this.config = config;
