@@ -8,7 +8,8 @@
     "lint": "biome lint .",
     "format": "biome format . --write",
     "check": "biome check . --write",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "postinstall": "simple-git-hooks"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +18,10 @@
   "devDependencies": {
     "@biomejs/biome": "^2.2.5",
     "@types/node": "^24.7.2",
+    "simple-git-hooks": "^2.13.1",
     "typescript": "^5.9.3"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm check"
   }
 }
