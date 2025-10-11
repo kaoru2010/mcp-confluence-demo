@@ -10,7 +10,6 @@ export class ConfluenceClient {
   private api: AxiosInstance;
 
   constructor(config: ConfluenceConfig) {
-    this.config = config;
     this.api = axios.create({
       baseURL: `${config.baseUrl}/wiki/rest/api`,
       auth: {

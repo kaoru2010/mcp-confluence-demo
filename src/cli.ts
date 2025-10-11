@@ -20,9 +20,9 @@ program
  * 設定を作成
  */
 function createConfig(url: string, email?: string): ConfluenceConfig {
-  const apiToken = process.env.JIRA_API_TOKEN;
+  const apiToken = process.env.CONFLUENCE_API_TOKEN;
   if (!apiToken) {
-    throw new Error("JIRA_API_TOKEN environment variable is required");
+    throw new Error("CONFLUENCE_API_TOKEN environment variable is required");
   }
 
   if (!email) {
