@@ -1,0 +1,8 @@
+[tools]
+bats = "1.11.1"
+github-cli = "2.74.1"
+shellcheck = "0.10.0"
+node = "22.13.1"
+rg = "14.1.1"
+actionlint = "1.7.7"
+pnpm = "10.11.1"
