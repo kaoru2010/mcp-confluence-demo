@@ -1,5 +1,6 @@
 import type { AxiosInstance } from "axios";
 import axios from "axios";
+import { createAbortSignal, getAbortReason, isAbortError } from "./abort.js";
 import {
   AuthenticationError,
   AuthorizationError,
@@ -12,6 +13,7 @@ import { Logger, logger } from "./logger.js";
 import type {
   ConfluenceConfig,
   ConfluencePage,
+  IOOptions,
   PageUpdateRequest,
 } from "./types.js";
 
@@ -34,16 +36,20 @@ export class ConfluenceClient {
 
   /**
    * ページIDからページ情報を取得
+   * @param pageId - Confluence page ID
+   * @param options - IO options for timeout and cancellation
    */
-  async getPage(pageId: string): Promise<ConfluencePage> {
+  async getPage(pageId: string, options?: IOOptions): Promise<ConfluencePage> {
     const startTime = Date.now();
     const url = `/content/${pageId}`;
+    const signal = createAbortSignal(options);
 
     logger.debug({
       event: "confluence_api_call",
       status: "started",
       method: "GET",
       target: `page/${pageId}`,
+      timeoutMs: options?.timeoutMs,
     });
 
     try {
@@ -51,6 +57,7 @@ export class ConfluenceClient {
         params: {
           expand: "body.storage,version",
         },
+        signal,
       });
 
       const durationMs = Date.now() - startTime;
@@ -66,6 +73,20 @@ export class ConfluenceClient {
       return response.data;
     } catch (error) {
       const durationMs = Date.now() - startTime;
+
+      // Handle abort/timeout
+      if (isAbortError(error)) {
+        const reason = getAbortReason(signal);
+        logger.warn({
+          event: "confluence_api_call",
+          status: "failed",
+          durationMs,
+          method: "GET",
+          target: `page/${pageId}`,
+          abortReason: reason,
+        });
+        throw error; // Don't suppress abort errors
+      }
 
       if (axios.isAxiosError(error)) {
         const status = error.response?.status || 0;
@@ -144,15 +165,22 @@ export class ConfluenceClient {
 
   /**
    * ページを更新
+   * @param pageId - Confluence page ID
+   * @param title - Page title
+   * @param content - Page content in storage format
+   * @param version - Current version number
+   * @param options - IO options for timeout and cancellation
    */
   async updatePage(
     pageId: string,
     title: string,
     content: string,
     version: number,
+    options?: IOOptions,
   ): Promise<ConfluencePage> {
     const startTime = Date.now();
     const url = `/content/${pageId}`;
+    const signal = createAbortSignal(options);
 
     logger.debug({
       event: "confluence_api_call",
@@ -160,6 +188,7 @@ export class ConfluenceClient {
       method: "PUT",
       target: `page/${pageId}`,
       version,
+      timeoutMs: options?.timeoutMs,
     });
 
     const updateRequest: PageUpdateRequest = {
@@ -179,7 +208,7 @@ export class ConfluenceClient {
     };
 
     try {
-      const response = await this.api.put(url, updateRequest);
+      const response = await this.api.put(url, updateRequest, { signal });
 
       const durationMs = Date.now() - startTime;
       logger.info({
@@ -195,6 +224,20 @@ export class ConfluenceClient {
       return response.data;
     } catch (error) {
       const durationMs = Date.now() - startTime;
+
+      // Handle abort/timeout
+      if (isAbortError(error)) {
+        const reason = getAbortReason(signal);
+        logger.warn({
+          event: "confluence_api_call",
+          status: "failed",
+          durationMs,
+          method: "PUT",
+          target: `page/${pageId}`,
+          abortReason: reason,
+        });
+        throw error; // Don't suppress abort errors
+      }
 
       if (axios.isAxiosError(error)) {
         const status = error.response?.status || 0;
