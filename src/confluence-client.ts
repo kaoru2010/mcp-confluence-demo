@@ -1,6 +1,14 @@
 import type { AxiosInstance } from "axios";
 import axios from "axios";
-import { logger } from "./logger.js";
+import {
+  AuthenticationError,
+  AuthorizationError,
+  ExternalServiceError,
+  InvalidUrlError,
+  PageNotFoundError,
+  RateLimitError,
+} from "./errors.js";
+import { Logger, logger } from "./logger.js";
 import type {
   ConfluenceConfig,
   ConfluencePage,
@@ -31,7 +39,12 @@ export class ConfluenceClient {
     const startTime = Date.now();
     const url = `/content/${pageId}`;
 
-    logger.apiStart("GET", url, pageId);
+    logger.debug({
+      event: "confluence_api_call",
+      status: "started",
+      method: "GET",
+      target: `page/${pageId}`,
+    });
 
     try {
       const response = await this.api.get(url, {
@@ -40,29 +53,92 @@ export class ConfluenceClient {
         },
       });
 
-      const responseTime = Date.now() - startTime;
-      logger.apiComplete("GET", response.status, responseTime);
+      const durationMs = Date.now() - startTime;
+      logger.info({
+        event: "confluence_api_call",
+        status: "completed",
+        durationMs,
+        method: "GET",
+        target: `page/${pageId}`,
+        statusCode: response.status,
+      });
 
       return response.data;
     } catch (error) {
-      const responseTime = Date.now() - startTime;
+      const durationMs = Date.now() - startTime;
 
       if (axios.isAxiosError(error)) {
         const status = error.response?.status || 0;
-        logger.apiError("GET", status, error, responseTime);
 
-        throw new Error(
-          `Failed to get page ${pageId}: ${status} ${error.response?.statusText || error.message}`,
-        );
+        // Classify error by status code
+        let domainError: Error;
+        switch (status) {
+          case 401:
+            domainError = new AuthenticationError(
+              "Invalid credentials or token",
+              error,
+            );
+            break;
+          case 403:
+            domainError = new AuthorizationError(
+              `page/${pageId}`,
+              "Insufficient permissions",
+            );
+            break;
+          case 404:
+            domainError = new PageNotFoundError(pageId);
+            break;
+          case 429:
+            domainError = new RateLimitError("confluence");
+            break;
+          case 500:
+          case 502:
+          case 503:
+            domainError = new ExternalServiceError(
+              "confluence",
+              `Server error: ${status}`,
+              error,
+            );
+            break;
+          default:
+            domainError = new ExternalServiceError(
+              "confluence",
+              `Failed to get page ${pageId}: ${status} ${error.response?.statusText || error.message}`,
+              error,
+            );
+        }
+
+        // Log at debug level - will be handled by caller
+        logger.debug({
+          event: "confluence_api_call",
+          status: "failed",
+          durationMs,
+          method: "GET",
+          target: `page/${pageId}`,
+          statusCode: status,
+          error: Logger.serializeError(domainError),
+        });
+
+        throw domainError;
       }
 
-      logger.apiError(
-        "GET",
-        0,
-        error instanceof Error ? error : new Error(String(error)),
-        responseTime,
+      // Non-Axios error
+      const unknownError = new ExternalServiceError(
+        "confluence",
+        `Unexpected error while getting page ${pageId}`,
+        error,
       );
-      throw error;
+
+      logger.debug({
+        event: "confluence_api_call",
+        status: "failed",
+        durationMs,
+        method: "GET",
+        target: `page/${pageId}`,
+        error: Logger.serializeError(unknownError),
+      });
+
+      throw unknownError;
     }
   }
 
@@ -78,7 +154,13 @@ export class ConfluenceClient {
     const startTime = Date.now();
     const url = `/content/${pageId}`;
 
-    logger.apiStart("PUT", url, pageId);
+    logger.debug({
+      event: "confluence_api_call",
+      status: "started",
+      method: "PUT",
+      target: `page/${pageId}`,
+      version,
+    });
 
     const updateRequest: PageUpdateRequest = {
       id: pageId,
@@ -99,29 +181,100 @@ export class ConfluenceClient {
     try {
       const response = await this.api.put(url, updateRequest);
 
-      const responseTime = Date.now() - startTime;
-      logger.apiComplete("PUT", response.status, responseTime);
+      const durationMs = Date.now() - startTime;
+      logger.info({
+        event: "confluence_api_call",
+        status: "completed",
+        durationMs,
+        method: "PUT",
+        target: `page/${pageId}`,
+        statusCode: response.status,
+        newVersion: version + 1,
+      });
 
       return response.data;
     } catch (error) {
-      const responseTime = Date.now() - startTime;
+      const durationMs = Date.now() - startTime;
 
       if (axios.isAxiosError(error)) {
         const status = error.response?.status || 0;
-        logger.apiError("PUT", status, error, responseTime);
 
-        throw new Error(
-          `Failed to update page ${pageId}: ${status} ${error.response?.statusText || error.message}`,
-        );
+        // Classify error by status code
+        let domainError: Error;
+        switch (status) {
+          case 401:
+            domainError = new AuthenticationError(
+              "Invalid credentials or token",
+              error,
+            );
+            break;
+          case 403:
+            domainError = new AuthorizationError(
+              `page/${pageId}`,
+              "Insufficient permissions to update",
+            );
+            break;
+          case 404:
+            domainError = new PageNotFoundError(pageId);
+            break;
+          case 409:
+            domainError = new ExternalServiceError(
+              "confluence",
+              `Version conflict: page ${pageId} was modified`,
+              error,
+            );
+            break;
+          case 429:
+            domainError = new RateLimitError("confluence");
+            break;
+          case 500:
+          case 502:
+          case 503:
+            domainError = new ExternalServiceError(
+              "confluence",
+              `Server error: ${status}`,
+              error,
+            );
+            break;
+          default:
+            domainError = new ExternalServiceError(
+              "confluence",
+              `Failed to update page ${pageId}: ${status} ${error.response?.statusText || error.message}`,
+              error,
+            );
+        }
+
+        // Log at debug level - will be handled by caller
+        logger.debug({
+          event: "confluence_api_call",
+          status: "failed",
+          durationMs,
+          method: "PUT",
+          target: `page/${pageId}`,
+          statusCode: status,
+          error: Logger.serializeError(domainError),
+        });
+
+        throw domainError;
       }
 
-      logger.apiError(
-        "PUT",
-        0,
-        error instanceof Error ? error : new Error(String(error)),
-        responseTime,
+      // Non-Axios error
+      const unknownError = new ExternalServiceError(
+        "confluence",
+        `Unexpected error while updating page ${pageId}`,
+        error,
       );
-      throw error;
+
+      logger.debug({
+        event: "confluence_api_call",
+        status: "failed",
+        durationMs,
+        method: "PUT",
+        target: `page/${pageId}`,
+        error: Logger.serializeError(unknownError),
+      });
+
+      throw unknownError;
     }
   }
 
@@ -131,7 +284,7 @@ export class ConfluenceClient {
   static extractPageIdFromUrl(url: string): string {
     const match = url.match(/\/pages\/(\d+)\//);
     if (!match || !match[1]) {
-      throw new Error(`Cannot extract page ID from URL: ${url}`);
+      throw new InvalidUrlError(url, "Cannot extract page ID from URL");
     }
     return match[1];
   }
