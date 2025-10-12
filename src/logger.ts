@@ -249,9 +249,7 @@ export class Logger {
   /**
    * Convert Error to structured error object
    */
-  static serializeError(
-    error: unknown,
-  ): StandardLogEntry["error"] | undefined {
+  static serializeError(error: unknown): StandardLogEntry["error"] | undefined {
     if (error instanceof Error) {
       const result: {
         name: string;
