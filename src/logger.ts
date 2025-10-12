@@ -1,241 +1,198 @@
 /**
  * Logger for MCP Confluence Server
- * Provides structured logging with emoji icons and different levels
+ * Provides structured logging with correlation ID tracking
  */
 
-export enum LogLevel {
-  DEBUG = 0,
-  INFO = 1,
-  WARN = 2,
-  ERROR = 3,
-}
+import { CorrelationContext } from "./correlation.js";
 
-export interface LogEntry {
-  timestamp: string;
+export type LogLevel = "debug" | "info" | "warn" | "error";
+export type LogStatus = "started" | "completed" | "failed";
+
+/**
+ * Standard log entry structure
+ * All logs should follow this structure for consistent observability
+ */
+export interface StandardLogEntry {
+  // Required fields
   level: LogLevel;
-  message: string;
-  context?: Record<string, any>;
-  error?: Error;
+  event: string;
+  status: LogStatus;
+  timestamp: string;
+
+  // Recommended fields
+  durationMs?: number | undefined;
+  target?: string | undefined;
+  correlationId?: string | undefined;
+
+  // Error information
+  error?:
+    | {
+        name: string;
+        message: string;
+        cause?: unknown;
+        stack?: string | undefined;
+      }
+    | undefined;
+
+  // Additional context
+  [key: string]: unknown;
 }
 
+/**
+ * Log level configuration
+ */
+const LOG_LEVELS: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
+
+/**
+ * Structured logger with correlation ID support
+ */
 export class Logger {
-  private level: LogLevel = LogLevel.INFO;
+  private minLevel: number = LOG_LEVELS.info;
   private prefix: string;
 
-  constructor(prefix: string = "MCP-Confluence") {
+  constructor(prefix = "MCP-Confluence") {
     this.prefix = prefix;
 
-    // 環境変数でログレベルを設定可能
-    const envLevel = process.env.LOG_LEVEL?.toUpperCase();
-    if (envLevel && envLevel in LogLevel) {
-      this.level = LogLevel[envLevel as keyof typeof LogLevel];
+    // Set log level from environment variable
+    const envLevel = process.env.LOG_LEVEL?.toLowerCase() as LogLevel;
+    if (envLevel && envLevel in LOG_LEVELS) {
+      this.minLevel = LOG_LEVELS[envLevel];
     }
   }
 
   /**
-   * ログレベルを設定
+   * Set minimum log level
    */
   setLevel(level: LogLevel): void {
-    this.level = level;
+    this.minLevel = LOG_LEVELS[level];
   }
 
   /**
-   * DEBUGレベルログ
+   * Log a structured entry
+   * This is the main entry point for all logging
    */
-  debug(message: string, context?: Record<string, any>): void {
-    this.log(LogLevel.DEBUG, message, context);
-  }
-
-  /**
-   * INFOレベルログ
-   */
-  info(message: string, context?: Record<string, any>): void {
-    this.log(LogLevel.INFO, message, context);
-  }
-
-  /**
-   * WARNレベルログ
-   */
-  warn(message: string, context?: Record<string, any>): void {
-    this.log(LogLevel.WARN, message, context);
-  }
-
-  /**
-   * ERRORレベルログ
-   */
-  error(message: string, error?: Error, context?: Record<string, any>): void {
-    this.log(LogLevel.ERROR, message, context, error);
-  }
-
-  /**
-   * ツール実行開始ログ
-   */
-  toolStart(toolName: string, params: Record<string, any>): void {
-    this.info(`🔧 Tool execution started: ${toolName}`, {
-      tool: toolName,
-      params: this.sanitizeParams(params),
-    });
-  }
-
-  /**
-   * ツール実行完了ログ
-   */
-  toolComplete(toolName: string, executionTime: number, result?: any): void {
-    this.info(`✅ Tool execution completed: ${toolName}`, {
-      tool: toolName,
-      executionTimeMs: executionTime,
-      hasResult: !!result,
-    });
-  }
-
-  /**
-   * ツール実行失敗ログ
-   */
-  toolError(toolName: string, error: Error, executionTime: number): void {
-    this.error(`❌ Tool execution failed: ${toolName}`, error, {
-      tool: toolName,
-      executionTimeMs: executionTime,
-    });
-  }
-
-  /**
-   * API呼び出し開始ログ
-   */
-  apiStart(method: string, url: string, pageId?: string): void {
-    this.debug(`🌍 API request: ${method} ${url}`, {
-      method,
-      url: this.sanitizeUrl(url),
-      pageId,
-    });
-  }
-
-  /**
-   * API呼び出し完了ログ
-   */
-  apiComplete(method: string, statusCode: number, responseTime: number): void {
-    const emoji = statusCode < 400 ? "✅" : "⚠️";
-    this.info(`${emoji} API response: ${statusCode}`, {
-      method,
-      statusCode,
-      responseTimeMs: responseTime,
-    });
-  }
-
-  /**
-   * API呼び出し失敗ログ
-   */
-  apiError(
-    method: string,
-    statusCode: number,
-    error: Error,
-    responseTime: number,
-  ): void {
-    let emoji = "❌";
-    let errorType = "API Error";
-
-    // ステータスコードに応じたエラー分類
-    switch (statusCode) {
-      case 401:
-        emoji = "🔐";
-        errorType = "Authentication Error";
-        break;
-      case 403:
-        emoji = "🚫";
-        errorType = "Permission Error";
-        break;
-      case 404:
-        emoji = "🔍";
-        errorType = "Page Not Found";
-        break;
-      case 429:
-        emoji = "⏱️";
-        errorType = "Rate Limited";
-        break;
-      case 500:
-      case 502:
-      case 503:
-        emoji = "🔥";
-        errorType = "Server Error";
-        break;
-    }
-
-    this.error(`${emoji} ${errorType}: ${method}`, error, {
-      method,
-      statusCode,
-      responseTimeMs: responseTime,
-      errorType,
-    });
-  }
-
-  /**
-   * Confluenceページ操作ログ
-   */
-  pageOperation(operation: string, pageId: string, pageTitle?: string): void {
-    const emoji =
-      operation === "read" ? "📖" : operation === "update" ? "✏️" : "📄";
-    this.info(`${emoji} Page ${operation}: ${pageTitle || pageId}`, {
-      operation,
-      pageId,
-      pageTitle,
-    });
-  }
-
-  /**
-   * サーバー起動・停止ログ
-   */
-  serverStart(): void {
-    this.info("🚀 MCP Confluence Server started", {
-      version: "1.0.0",
-      logLevel: LogLevel[this.level],
-    });
-  }
-
-  serverStop(): void {
-    this.info("🛑 MCP Confluence Server stopped");
-  }
-
-  /**
-   * ベースログ出力メソッド
-   */
-  private log(
-    level: LogLevel,
-    message: string,
-    context?: Record<string, any>,
-    error?: Error,
-  ): void {
-    if (level < this.level) {
+  log(entry: Omit<StandardLogEntry, "timestamp" | "correlationId">): void {
+    const level = entry.level as LogLevel;
+    const levelValue = LOG_LEVELS[level];
+    if (levelValue < this.minLevel) {
       return;
     }
 
-    const entry: LogEntry = {
+    const fullEntry: StandardLogEntry = {
+      ...(entry as any),
       timestamp: new Date().toISOString(),
-      level,
-      message,
-      ...(context && { context }),
-      ...(error && { error }),
+      correlationId: CorrelationContext.get(),
     };
 
-    const _levelName = LogLevel[level];
-    const emoji = this.getLevelEmoji(level);
+    this.output(fullEntry);
+  }
+
+  /**
+   * Convenience method: Log debug level
+   */
+  debug(
+    entry: Omit<StandardLogEntry, "timestamp" | "correlationId" | "level">,
+  ): void {
+    this.log({ level: "debug", ...entry });
+  }
+
+  /**
+   * Convenience method: Log info level
+   */
+  info(
+    entry: Omit<StandardLogEntry, "timestamp" | "correlationId" | "level">,
+  ): void {
+    this.log({ level: "info", ...entry });
+  }
+
+  /**
+   * Convenience method: Log warn level
+   */
+  warn(
+    entry: Omit<StandardLogEntry, "timestamp" | "correlationId" | "level">,
+  ): void {
+    this.log({ level: "warn", ...entry });
+  }
+
+  /**
+   * Convenience method: Log error level
+   */
+  error(
+    entry: Omit<StandardLogEntry, "timestamp" | "correlationId" | "level">,
+  ): void {
+    this.log({ level: "error", ...entry });
+  }
+
+  /**
+   * Output formatted log entry
+   */
+  private output(entry: StandardLogEntry): void {
+    const emoji = this.getLevelEmoji(entry.level);
     const timestamp = entry.timestamp.slice(11, 23); // HH:mm:ss.sss
+    const correlationId = entry.correlationId || "no-correlation";
 
-    let logMessage = `${timestamp} ${emoji} [${this.prefix}] ${message}`;
+    // Build base message
+    const parts = [
+      timestamp,
+      emoji,
+      `[${this.prefix}]`,
+      `[${correlationId.slice(0, 8)}]`,
+      `[${entry.event}]`,
+      `[${entry.status}]`,
+    ];
 
-    // コンテキスト情報があれば追加
-    if (context && Object.keys(context).length > 0) {
-      logMessage += ` ${JSON.stringify(context)}`;
+    if (entry.target) {
+      parts.push(`target=${entry.target}`);
     }
 
-    // エラー情報があれば追加
-    if (error) {
-      logMessage += `\\n  Error: ${error.message}`;
-      if (level === LogLevel.DEBUG && error.stack) {
-        logMessage += `\\n  Stack: ${error.stack}`;
+    if (entry.durationMs !== undefined) {
+      parts.push(`duration=${entry.durationMs}ms`);
+    }
+
+    const baseMessage = parts.join(" ");
+
+    // Add additional context (excluding standard fields)
+    const standardFields = new Set([
+      "level",
+      "event",
+      "status",
+      "timestamp",
+      "durationMs",
+      "target",
+      "correlationId",
+      "error",
+    ]);
+
+    const contextFields: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(entry)) {
+      if (!standardFields.has(key)) {
+        contextFields[key] = this.maskSensitiveData(key, value);
       }
     }
 
-    // コンソール出力（stderr for errors, stdout for others）
-    if (level >= LogLevel.ERROR) {
+    let logMessage = baseMessage;
+    if (Object.keys(contextFields).length > 0) {
+      logMessage += ` ${JSON.stringify(contextFields)}`;
+    }
+
+    // Add error information
+    if (entry.error) {
+      logMessage += `\n  Error: ${entry.error.name}: ${entry.error.message}`;
+      if (entry.error.cause) {
+        logMessage += `\n  Cause: ${JSON.stringify(entry.error.cause)}`;
+      }
+      if (this.minLevel === LOG_LEVELS.debug && entry.error.stack) {
+        logMessage += `\n  Stack: ${entry.error.stack}`;
+      }
+    }
+
+    // Output to appropriate stream
+    if (entry.level === "error") {
       console.error(logMessage);
     } else {
       console.log(logMessage);
@@ -243,17 +200,17 @@ export class Logger {
   }
 
   /**
-   * ログレベルに応じた絵文字を取得
+   * Get emoji for log level
    */
   private getLevelEmoji(level: LogLevel): string {
     switch (level) {
-      case LogLevel.DEBUG:
+      case "debug":
         return "🐛";
-      case LogLevel.INFO:
+      case "info":
         return "ℹ️";
-      case LogLevel.WARN:
+      case "warn":
         return "⚠️";
-      case LogLevel.ERROR:
+      case "error":
         return "❌";
       default:
         return "📝";
@@ -261,37 +218,70 @@ export class Logger {
   }
 
   /**
-   * パラメータから機密情報を除去
+   * Mask sensitive data in log output
    */
-  private sanitizeParams(params: Record<string, any>): Record<string, any> {
-    const sanitized = { ...params };
+  private maskSensitiveData(key: string, value: unknown): unknown {
+    const sensitiveKeys = [
+      "token",
+      "password",
+      "apitoken",
+      "api_token",
+      "email",
+    ];
+    const lowerKey = key.toLowerCase();
 
-    // 機密情報をマスク
-    const sensitiveKeys = ["token", "password", "email", "apiToken"];
-    for (const key of sensitiveKeys) {
-      if (sanitized[key]) {
-        sanitized[key] = "***MASKED***";
-      }
+    if (sensitiveKeys.some((k) => lowerKey.includes(k))) {
+      return "***MASKED***";
     }
 
-    return sanitized;
+    // Recursively mask objects
+    if (typeof value === "object" && value !== null) {
+      const masked: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value)) {
+        masked[k] = this.maskSensitiveData(k, v);
+      }
+      return masked;
+    }
+
+    return value;
   }
 
   /**
-   * URLから機密情報を除去
+   * Convert Error to structured error object
    */
-  private sanitizeUrl(url: string): string {
-    try {
-      const urlObj = new URL(url);
-      // クエリパラメータから機密情報を削除
-      urlObj.searchParams.delete("token");
-      urlObj.searchParams.delete("password");
-      return urlObj.toString();
-    } catch {
-      return url;
+  static serializeError(
+    error: unknown,
+  ): StandardLogEntry["error"] | undefined {
+    if (error instanceof Error) {
+      const result: {
+        name: string;
+        message: string;
+        cause?: unknown;
+        stack?: string;
+      } = {
+        name: error.name,
+        message: error.message,
+      };
+
+      // Add cause if present
+      if ("cause" in error && error.cause !== undefined) {
+        result.cause = error.cause;
+      }
+
+      // Add stack if present
+      if (error.stack) {
+        result.stack = error.stack;
+      }
+
+      return result;
     }
+
+    return {
+      name: "UnknownError",
+      message: String(error),
+    };
   }
 }
 
-// デフォルトロガーインスタンス
+// Default logger instance
 export const logger = new Logger();
