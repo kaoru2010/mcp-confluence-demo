@@ -5,6 +5,7 @@ import type {
   ConfluencePage,
   PageUpdateRequest,
 } from "./types.js";
+import { logger } from "./logger.js";
 
 export class ConfluenceClient {
   private api: AxiosInstance;
@@ -27,19 +28,35 @@ export class ConfluenceClient {
    * ページIDからページ情報を取得
    */
   async getPage(pageId: string): Promise<ConfluencePage> {
+    const startTime = Date.now();
+    const url = `/content/${pageId}`;
+    
+    logger.apiStart("GET", url, pageId);
+
     try {
-      const response = await this.api.get(`/content/${pageId}`, {
+      const response = await this.api.get(url, {
         params: {
           expand: "body.storage,version",
         },
       });
+      
+      const responseTime = Date.now() - startTime;
+      logger.apiComplete("GET", response.status, responseTime);
+      
       return response.data;
     } catch (error) {
+      const responseTime = Date.now() - startTime;
+      
       if (axios.isAxiosError(error)) {
+        const status = error.response?.status || 0;
+        logger.apiError("GET", status, error, responseTime);
+        
         throw new Error(
-          `Failed to get page ${pageId}: ${error.response?.status} ${error.response?.statusText}`,
+          `Failed to get page ${pageId}: ${status} ${error.response?.statusText || error.message}`,
         );
       }
+      
+      logger.apiError("GET", 0, error instanceof Error ? error : new Error(String(error)), responseTime);
       throw error;
     }
   }
@@ -53,6 +70,11 @@ export class ConfluenceClient {
     content: string,
     version: number,
   ): Promise<ConfluencePage> {
+    const startTime = Date.now();
+    const url = `/content/${pageId}`;
+    
+    logger.apiStart("PUT", url, pageId);
+
     const updateRequest: PageUpdateRequest = {
       id: pageId,
       type: "page",
@@ -70,14 +92,25 @@ export class ConfluenceClient {
     };
 
     try {
-      const response = await this.api.put(`/content/${pageId}`, updateRequest);
+      const response = await this.api.put(url, updateRequest);
+      
+      const responseTime = Date.now() - startTime;
+      logger.apiComplete("PUT", response.status, responseTime);
+      
       return response.data;
     } catch (error) {
+      const responseTime = Date.now() - startTime;
+      
       if (axios.isAxiosError(error)) {
+        const status = error.response?.status || 0;
+        logger.apiError("PUT", status, error, responseTime);
+        
         throw new Error(
-          `Failed to update page ${pageId}: ${error.response?.status} ${error.response?.statusText}`,
+          `Failed to update page ${pageId}: ${status} ${error.response?.statusText || error.message}`,
         );
       }
+      
+      logger.apiError("PUT", 0, error instanceof Error ? error : new Error(String(error)), responseTime);
       throw error;
     }
   }
