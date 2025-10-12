@@ -104,6 +104,34 @@ export LOG_LEVEL=INFO   # Default level
 export LOG_LEVEL=ERROR  # Only errors
 ```
 
+## Timeout and Cancellation
+
+All external I/O operations (Confluence API calls) support timeout and cancellation:
+
+### Default Timeout
+- **Default**: 10 seconds (10,000ms)
+- Prevents hanging operations and resource exhaustion
+- Automatically applied to all API calls
+
+### Timeout Handling
+When a timeout occurs:
+- Operation is aborted immediately
+- `AbortError` is thrown
+- Logged with `abortReason: "timeout"`
+- Error is propagated to caller (not suppressed)
+
+### Cancellation Support
+Operations can be cancelled via `AbortSignal`:
+- Custom timeout can be specified via `timeoutMs` parameter
+- Cancellation reason is logged (`timeout` or `cancelled`)
+- Proper cleanup of resources
+
+### Technical Details
+- Uses `AbortSignal.timeout()` for timeouts
+- Uses `AbortSignal.any()` for combining signals
+- Axios automatically cancels HTTP requests on abort
+- All errors preserve original cause chain
+
 ## Tools
 
 - Node.js: 22.13.1
