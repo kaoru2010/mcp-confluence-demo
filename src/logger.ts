@@ -215,7 +215,7 @@ export class Logger {
       ...(error && { error }),
     };
 
-    const levelName = LogLevel[level];
+    const _levelName = LogLevel[level];
     const emoji = this.getLevelEmoji(level);
     const timestamp = entry.timestamp.slice(11, 23); // HH:mm:ss.sss
 
