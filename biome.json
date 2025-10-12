@@ -5,10 +5,10 @@
     "clientKind": "git",
     "useIgnoreFile": false
   },
-	"files": {
-		"ignoreUnknown": false,
-		"includes": ["src/**", "*.js", "*.ts", "*.json"]
-	},
+  "files": {
+    "ignoreUnknown": false,
+    "includes": ["src/**", "*.js", "*.ts", "*.json"]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
