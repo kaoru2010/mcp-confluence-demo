@@ -122,7 +122,7 @@ class ConfluenceMcpServer {
       logger.toolStart(name, args || {});
 
       try {
-        let result;
+        let result: any;
         switch (name) {
           case "confluence_read":
             result = await this.handleRead(args);
