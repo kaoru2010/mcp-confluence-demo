@@ -24,7 +24,7 @@ pnpm install
 
 2. Set environment variables:
 ```bash
-export JIRA_API_TOKEN="your-jira-api-token"
+export CONFLUENCE_API_TOKEN="your-confluence-api-token"
 export CONFLUENCE_EMAIL="your-email@company.com"
 
 # Optional: Set log level (DEBUG, INFO, WARN, ERROR)

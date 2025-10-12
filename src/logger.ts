@@ -22,9 +22,9 @@ export class Logger {
   private level: LogLevel = LogLevel.INFO;
   private prefix: string;
 
-  constructor(prefix: string = 'MCP-Confluence') {
+  constructor(prefix: string = "MCP-Confluence") {
     this.prefix = prefix;
-    
+
     // 環境変数でログレベルを設定可能
     const envLevel = process.env.LOG_LEVEL?.toUpperCase();
     if (envLevel && envLevel in LogLevel) {
@@ -113,7 +113,7 @@ export class Logger {
    * API呼び出し完了ログ
    */
   apiComplete(method: string, statusCode: number, responseTime: number): void {
-    const emoji = statusCode < 400 ? '✅' : '⚠️';
+    const emoji = statusCode < 400 ? "✅" : "⚠️";
     this.info(`${emoji} API response: ${statusCode}`, {
       method,
       statusCode,
@@ -124,33 +124,38 @@ export class Logger {
   /**
    * API呼び出し失敗ログ
    */
-  apiError(method: string, statusCode: number, error: Error, responseTime: number): void {
-    let emoji = '❌';
-    let errorType = 'API Error';
+  apiError(
+    method: string,
+    statusCode: number,
+    error: Error,
+    responseTime: number,
+  ): void {
+    let emoji = "❌";
+    let errorType = "API Error";
 
     // ステータスコードに応じたエラー分類
     switch (statusCode) {
       case 401:
-        emoji = '🔐';
-        errorType = 'Authentication Error';
+        emoji = "🔐";
+        errorType = "Authentication Error";
         break;
       case 403:
-        emoji = '🚫';
-        errorType = 'Permission Error';
+        emoji = "🚫";
+        errorType = "Permission Error";
         break;
       case 404:
-        emoji = '🔍';
-        errorType = 'Page Not Found';
+        emoji = "🔍";
+        errorType = "Page Not Found";
         break;
       case 429:
-        emoji = '⏱️';
-        errorType = 'Rate Limited';
+        emoji = "⏱️";
+        errorType = "Rate Limited";
         break;
       case 500:
       case 502:
       case 503:
-        emoji = '🔥';
-        errorType = 'Server Error';
+        emoji = "🔥";
+        errorType = "Server Error";
         break;
     }
 
@@ -166,7 +171,8 @@ export class Logger {
    * Confluenceページ操作ログ
    */
   pageOperation(operation: string, pageId: string, pageTitle?: string): void {
-    const emoji = operation === 'read' ? '📖' : operation === 'update' ? '✏️' : '📄';
+    const emoji =
+      operation === "read" ? "📖" : operation === "update" ? "✏️" : "📄";
     this.info(`${emoji} Page ${operation}: ${pageTitle || pageId}`, {
       operation,
       pageId,
@@ -178,24 +184,24 @@ export class Logger {
    * サーバー起動・停止ログ
    */
   serverStart(): void {
-    this.info('🚀 MCP Confluence Server started', {
-      version: '1.0.0',
+    this.info("🚀 MCP Confluence Server started", {
+      version: "1.0.0",
       logLevel: LogLevel[this.level],
     });
   }
 
   serverStop(): void {
-    this.info('🛑 MCP Confluence Server stopped');
+    this.info("🛑 MCP Confluence Server stopped");
   }
 
   /**
    * ベースログ出力メソッド
    */
   private log(
-    level: LogLevel, 
-    message: string, 
-    context?: Record<string, any>, 
-    error?: Error
+    level: LogLevel,
+    message: string,
+    context?: Record<string, any>,
+    error?: Error,
   ): void {
     if (level < this.level) {
       return;
@@ -242,15 +248,15 @@ export class Logger {
   private getLevelEmoji(level: LogLevel): string {
     switch (level) {
       case LogLevel.DEBUG:
-        return '🐛';
+        return "🐛";
       case LogLevel.INFO:
-        return 'ℹ️';
+        return "ℹ️";
       case LogLevel.WARN:
-        return '⚠️';
+        return "⚠️";
       case LogLevel.ERROR:
-        return '❌';
+        return "❌";
       default:
-        return '📝';
+        return "📝";
     }
   }
 
@@ -259,12 +265,12 @@ export class Logger {
    */
   private sanitizeParams(params: Record<string, any>): Record<string, any> {
     const sanitized = { ...params };
-    
+
     // 機密情報をマスク
-    const sensitiveKeys = ['token', 'password', 'email', 'apiToken'];
+    const sensitiveKeys = ["token", "password", "email", "apiToken"];
     for (const key of sensitiveKeys) {
       if (sanitized[key]) {
-        sanitized[key] = '***MASKED***';
+        sanitized[key] = "***MASKED***";
       }
     }
 
@@ -278,8 +284,8 @@ export class Logger {
     try {
       const urlObj = new URL(url);
       // クエリパラメータから機密情報を削除
-      urlObj.searchParams.delete('token');
-      urlObj.searchParams.delete('password');
+      urlObj.searchParams.delete("token");
+      urlObj.searchParams.delete("password");
       return urlObj.toString();
     } catch {
       return url;
