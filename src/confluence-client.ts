@@ -280,9 +280,10 @@ export class ConfluenceClient {
 
   /**
    * URLからページIDを抽出
+   * Supports URLs with or without trailing slash
    */
   static extractPageIdFromUrl(url: string): string {
-    const match = url.match(/\/pages\/(\d+)\//);
+    const match = url.match(/\/pages\/(\d+)(?:\/|$)/);
     if (!match || !match[1]) {
       throw new InvalidUrlError(url, "Cannot extract page ID from URL");
     }
