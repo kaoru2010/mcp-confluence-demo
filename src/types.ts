@@ -96,8 +96,7 @@ export interface ImportResult {
   pageId: string;
   pageTitle: string;
   pageVersion: number;
-  uploadedImages: string[]; // ファイル名のリスト
-  skippedImages: string[]; // 既存だったファイル
+  uploadedImages: string[]; // ファイル名のリスト（既存の場合は新バージョンとして追加）
 }
 
 /**

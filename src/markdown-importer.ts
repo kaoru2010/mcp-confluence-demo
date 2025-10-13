@@ -177,7 +177,6 @@ export class MarkdownImporter {
       pageTitle: updatedPage.title,
       pageVersion: updatedPage.version.number,
       uploadedImages,
-      skippedImages: [],
     };
   }
 

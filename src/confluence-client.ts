@@ -429,7 +429,7 @@ export class ConfluenceClient {
   }
 
   /**
-   * アタッチメントをアップロード（既存の場合は上書き）
+   * アタッチメントをアップロード（既存の場合は新バージョンとして追加）
    * @param pageId - Confluence page ID
    * @param fileName - File name
    * @param fileData - File data as Buffer
@@ -449,7 +449,7 @@ export class ConfluenceClient {
     logger.debug({
       event: "confluence_api_call",
       status: "started",
-      method: "POST",
+      method: "PUT",
       target: `page/${pageId}/attachment/${fileName}`,
       fileSize: fileData.length,
       timeoutMs: options?.timeoutMs,
@@ -465,29 +465,17 @@ export class ConfluenceClient {
       contentType,
     });
 
-    let url: string;
-    let method: "POST" | "PUT";
+    // Confluence API: PUT to /content/{id}/child/attachment
+    // If file exists, it creates a new version automatically
+    const url = `/content/${pageId}/child/attachment`;
+    const method = "PUT";
 
-    if (existing) {
-      // Update existing attachment
-      url = `/content/${pageId}/child/attachment/${existing.id}/data`;
-      method = "PUT";
-      logger.debug({
-        event: "attachment_operation",
-        action: "overwrite",
-        attachmentId: existing.id,
-        fileName,
-      });
-    } else {
-      // Create new attachment
-      url = `/content/${pageId}/child/attachment`;
-      method = "POST";
-      logger.debug({
-        event: "attachment_operation",
-        action: "create",
-        fileName,
-      });
-    }
+    logger.debug({
+      event: "attachment_operation",
+      action: existing ? "update_version" : "create",
+      attachmentId: existing?.id,
+      fileName,
+    });
 
     try {
       const response = await this.api.request({
@@ -509,7 +497,7 @@ export class ConfluenceClient {
         method,
         target: `page/${pageId}/attachment/${fileName}`,
         statusCode: response.status,
-        action: existing ? "overwrite" : "create",
+        action: existing ? "update_version" : "create",
       });
 
       const result = response.data.results?.[0] || response.data;
