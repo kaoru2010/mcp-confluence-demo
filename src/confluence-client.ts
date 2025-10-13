@@ -1,5 +1,6 @@
 import type { AxiosInstance } from "axios";
 import axios from "axios";
+import FormData from "form-data";
 import { createAbortSignal, getAbortReason, isAbortError } from "./abort.js";
 import {
   AuthenticationError,
@@ -11,6 +12,7 @@ import {
 } from "./errors.js";
 import { Logger, logger } from "./logger.js";
 import type {
+  AttachmentInfo,
   ConfluenceConfig,
   ConfluencePage,
   IOOptions,
@@ -318,6 +320,392 @@ export class ConfluenceClient {
       });
 
       throw unknownError;
+    }
+  }
+
+  /**
+   * アタッチメント一覧を取得
+   * @param pageId - Confluence page ID
+   * @param options - IO options for timeout and cancellation
+   */
+  async getAttachments(
+    pageId: string,
+    options?: IOOptions,
+  ): Promise<AttachmentInfo[]> {
+    const startTime = Date.now();
+    const url = `/content/${pageId}/child/attachment`;
+    const signal = createAbortSignal(options);
+
+    logger.debug({
+      event: "confluence_api_call",
+      status: "started",
+      method: "GET",
+      target: `page/${pageId}/attachments`,
+      timeoutMs: options?.timeoutMs,
+    });
+
+    try {
+      const response = await this.api.get(url, {
+        params: {
+          limit: 1000,
+        },
+        signal,
+      });
+
+      const durationMs = Date.now() - startTime;
+      logger.info({
+        event: "confluence_api_call",
+        status: "completed",
+        durationMs,
+        method: "GET",
+        target: `page/${pageId}/attachments`,
+        statusCode: response.status,
+        count: response.data.results?.length || 0,
+      });
+
+      return (
+        response.data.results?.map((attachment: any) => ({
+          id: attachment.id,
+          title: attachment.title,
+          downloadUrl: attachment._links?.download || "",
+          fileSize: attachment.extensions?.fileSize || 0,
+          mediaType: attachment.extensions?.mediaType || "",
+        })) || []
+      );
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+
+      if (isAbortError(error)) {
+        const reason = getAbortReason(signal);
+        logger.warn({
+          event: "confluence_api_call",
+          status: "failed",
+          durationMs,
+          method: "GET",
+          target: `page/${pageId}/attachments`,
+          abortReason: reason,
+        });
+        throw error;
+      }
+
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status || 0;
+        const domainError = this.createDomainError(
+          error,
+          pageId,
+          "get attachments",
+        );
+
+        logger.debug({
+          event: "confluence_api_call",
+          status: "failed",
+          durationMs,
+          method: "GET",
+          target: `page/${pageId}/attachments`,
+          statusCode: status,
+          error: Logger.serializeError(domainError),
+        });
+
+        throw domainError;
+      }
+
+      const unknownError = new ExternalServiceError(
+        "confluence",
+        `Unexpected error while getting attachments for page ${pageId}`,
+        error,
+      );
+
+      logger.debug({
+        event: "confluence_api_call",
+        status: "failed",
+        durationMs,
+        method: "GET",
+        target: `page/${pageId}/attachments`,
+        error: Logger.serializeError(unknownError),
+      });
+
+      throw unknownError;
+    }
+  }
+
+  /**
+   * アタッチメントをアップロード（既存の場合は上書き）
+   * @param pageId - Confluence page ID
+   * @param fileName - File name
+   * @param fileData - File data as Buffer
+   * @param contentType - MIME type
+   * @param options - IO options for timeout and cancellation
+   */
+  async uploadAttachment(
+    pageId: string,
+    fileName: string,
+    fileData: Buffer,
+    contentType: string,
+    options?: IOOptions,
+  ): Promise<AttachmentInfo> {
+    const startTime = Date.now();
+    const signal = createAbortSignal(options);
+
+    logger.debug({
+      event: "confluence_api_call",
+      status: "started",
+      method: "POST",
+      target: `page/${pageId}/attachment/${fileName}`,
+      fileSize: fileData.length,
+      timeoutMs: options?.timeoutMs,
+    });
+
+    // Check if attachment already exists
+    const existingAttachments = await this.getAttachments(pageId, options);
+    const existing = existingAttachments.find((att) => att.title === fileName);
+
+    const formData = new FormData();
+    formData.append("file", fileData, {
+      filename: fileName,
+      contentType,
+    });
+
+    let url: string;
+    let method: "POST" | "PUT";
+
+    if (existing) {
+      // Update existing attachment
+      url = `/content/${pageId}/child/attachment/${existing.id}/data`;
+      method = "PUT";
+      logger.debug({
+        event: "attachment_operation",
+        action: "overwrite",
+        attachmentId: existing.id,
+        fileName,
+      });
+    } else {
+      // Create new attachment
+      url = `/content/${pageId}/child/attachment`;
+      method = "POST";
+      logger.debug({
+        event: "attachment_operation",
+        action: "create",
+        fileName,
+      });
+    }
+
+    try {
+      const response = await this.api.request({
+        method,
+        url,
+        data: formData,
+        headers: {
+          ...formData.getHeaders(),
+          "X-Atlassian-Token": "no-check",
+        },
+        signal,
+      });
+
+      const durationMs = Date.now() - startTime;
+      logger.info({
+        event: "confluence_api_call",
+        status: "completed",
+        durationMs,
+        method,
+        target: `page/${pageId}/attachment/${fileName}`,
+        statusCode: response.status,
+        action: existing ? "overwrite" : "create",
+      });
+
+      const result = response.data.results?.[0] || response.data;
+      return {
+        id: result.id,
+        title: result.title,
+        downloadUrl: result._links?.download || "",
+        fileSize: result.extensions?.fileSize || 0,
+        mediaType: result.extensions?.mediaType || "",
+      };
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+
+      if (isAbortError(error)) {
+        const reason = getAbortReason(signal);
+        logger.warn({
+          event: "confluence_api_call",
+          status: "failed",
+          durationMs,
+          method,
+          target: `page/${pageId}/attachment/${fileName}`,
+          abortReason: reason,
+        });
+        throw error;
+      }
+
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status || 0;
+        const domainError = this.createDomainError(
+          error,
+          pageId,
+          "upload attachment",
+        );
+
+        logger.debug({
+          event: "confluence_api_call",
+          status: "failed",
+          durationMs,
+          method,
+          target: `page/${pageId}/attachment/${fileName}`,
+          statusCode: status,
+          error: Logger.serializeError(domainError),
+        });
+
+        throw domainError;
+      }
+
+      const unknownError = new ExternalServiceError(
+        "confluence",
+        `Unexpected error while uploading attachment ${fileName} to page ${pageId}`,
+        error,
+      );
+
+      logger.debug({
+        event: "confluence_api_call",
+        status: "failed",
+        durationMs,
+        method,
+        target: `page/${pageId}/attachment/${fileName}`,
+        error: Logger.serializeError(unknownError),
+      });
+
+      throw unknownError;
+    }
+  }
+
+  /**
+   * アタッチメントをダウンロード
+   * @param downloadUrl - Download URL (relative path)
+   * @param options - IO options for timeout and cancellation
+   */
+  async downloadAttachment(
+    downloadUrl: string,
+    options?: IOOptions,
+  ): Promise<Buffer> {
+    const startTime = Date.now();
+    const signal = createAbortSignal(options);
+
+    logger.debug({
+      event: "confluence_api_call",
+      status: "started",
+      method: "GET",
+      target: `attachment${downloadUrl}`,
+      timeoutMs: options?.timeoutMs,
+    });
+
+    try {
+      const response = await this.api.get(downloadUrl, {
+        responseType: "arraybuffer",
+        signal,
+      });
+
+      const durationMs = Date.now() - startTime;
+      logger.info({
+        event: "confluence_api_call",
+        status: "completed",
+        durationMs,
+        method: "GET",
+        target: `attachment${downloadUrl}`,
+        statusCode: response.status,
+        size: response.data.length,
+      });
+
+      return Buffer.from(response.data);
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+
+      if (isAbortError(error)) {
+        const reason = getAbortReason(signal);
+        logger.warn({
+          event: "confluence_api_call",
+          status: "failed",
+          durationMs,
+          method: "GET",
+          target: `attachment${downloadUrl}`,
+          abortReason: reason,
+        });
+        throw error;
+      }
+
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status || 0;
+        const domainError = this.createDomainError(
+          error,
+          downloadUrl,
+          "download attachment",
+        );
+
+        logger.debug({
+          event: "confluence_api_call",
+          status: "failed",
+          durationMs,
+          method: "GET",
+          target: `attachment${downloadUrl}`,
+          statusCode: status,
+          error: Logger.serializeError(domainError),
+        });
+
+        throw domainError;
+      }
+
+      const unknownError = new ExternalServiceError(
+        "confluence",
+        `Unexpected error while downloading attachment ${downloadUrl}`,
+        error,
+      );
+
+      logger.debug({
+        event: "confluence_api_call",
+        status: "failed",
+        durationMs,
+        method: "GET",
+        target: `attachment${downloadUrl}`,
+        error: Logger.serializeError(unknownError),
+      });
+
+      throw unknownError;
+    }
+  }
+
+  /**
+   * Create domain-specific error from Axios error
+   */
+  private createDomainError(
+    error: any,
+    resource: string,
+    operation: string,
+  ): Error {
+    const status = error.response?.status || 0;
+
+    switch (status) {
+      case 401:
+        return new AuthenticationError("Invalid credentials or token", error);
+      case 403:
+        return new AuthorizationError(
+          resource,
+          `Insufficient permissions to ${operation}`,
+        );
+      case 404:
+        return new PageNotFoundError(resource);
+      case 429:
+        return new RateLimitError("confluence");
+      case 500:
+      case 502:
+      case 503:
+        return new ExternalServiceError(
+          "confluence",
+          `Server error: ${status}`,
+          error,
+        );
+      default:
+        return new ExternalServiceError(
+          "confluence",
+          `Failed to ${operation} for ${resource}: ${status} ${error.response?.statusText || error.message}`,
+          error,
+        );
     }
   }
 
