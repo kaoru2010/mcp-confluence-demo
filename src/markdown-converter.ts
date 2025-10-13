@@ -1,6 +1,6 @@
-import TurndownService from "turndown";
-import { marked } from "marked";
 import * as cheerio from "cheerio";
+import { marked } from "marked";
+import TurndownService from "turndown";
 
 /**
  * ConfluenceのStorage FormatとMarkdownの相互変換
@@ -117,15 +117,13 @@ export class MarkdownConverter {
    * Markdownをクリーンアップ
    */
   private cleanupMarkdown(markdown: string): string {
-    return (
-      `${markdown
-        // 3行以上の連続した空行を2行に
-        .replace(/\n{4,}/g, "\n\n\n")
-        // 末尾の空白を削除
-        .replace(/[ \t]+$/gm, "")
-        // 最後に改行を1つ追加
-        .trim()}\n`
-    );
+    return `${markdown
+      // 3行以上の連続した空行を2行に
+      .replace(/\n{4,}/g, "\n\n\n")
+      // 末尾の空白を削除
+      .replace(/[ \t]+$/gm, "")
+      // 最後に改行を1つ追加
+      .trim()}\n`;
   }
 
   /**
