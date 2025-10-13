@@ -55,3 +55,73 @@ export interface IOOptions {
    */
   timeoutMs?: number;
 }
+
+/**
+ * Image reference in Markdown
+ */
+export interface ImageReference {
+  originalPath: string; // Markdownでの参照パス
+  resolvedPath: string; // 実際のファイルパス（絶対パス）
+  alt: string;
+  attributes?: {
+    width?: number;
+    height?: number;
+  }; // <img>タグの属性
+}
+
+/**
+ * Confluence image reference
+ */
+export interface ConfluenceImageReference {
+  filename: string;
+  downloadUrl: string;
+}
+
+/**
+ * Confluence attachment information
+ */
+export interface AttachmentInfo {
+  id: string;
+  title: string; // ファイル名
+  downloadUrl: string;
+  fileSize: number;
+  mediaType: string;
+}
+
+/**
+ * Result of Markdown import operation
+ */
+export interface ImportResult {
+  success: boolean;
+  pageId: string;
+  pageTitle: string;
+  pageVersion: number;
+  uploadedImages: string[]; // ファイル名のリスト（既存の場合は新バージョンとして追加）
+}
+
+/**
+ * Result of Markdown export operation
+ */
+export interface ExportResult {
+  success: boolean;
+  markdownFile: string;
+  downloadedImages: string[];
+  outputDir: string;
+}
+
+/**
+ * Validation result for image files
+ */
+export interface ValidationResult {
+  valid: boolean;
+  errors: ValidationError[];
+}
+
+/**
+ * Validation error for image files
+ */
+export interface ValidationError {
+  type: "not_found" | "size_limit" | "invalid_type";
+  path: string;
+  message: string;
+}
