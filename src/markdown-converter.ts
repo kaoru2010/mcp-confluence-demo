@@ -388,17 +388,11 @@ export class MarkdownConverter {
           const width = $element.attr("ac:width");
           const height = $element.attr("ac:height");
 
-          let replacement: string;
-          if (width || height) {
-            // HTML形式で置換
-            replacement = `<img src="${localPath}"`;
-            if (width) replacement += ` width="${width}"`;
-            if (height) replacement += ` height="${height}"`;
-            replacement += ">";
-          } else {
-            // Markdown形式で置換
-            replacement = `![${filename}](${localPath})`;
-          }
+          // すべてHTML <img>タグに置換（TurndownServiceがMarkdownに変換）
+          let replacement = `<img src="${localPath}" alt="${filename}"`;
+          if (width) replacement += ` width="${width}"`;
+          if (height) replacement += ` height="${height}"`;
+          replacement += ">";
 
           $element.replaceWith(replacement);
         }

@@ -566,26 +566,29 @@ export class ConfluenceClient {
 
   /**
    * アタッチメントをダウンロード
-   * @param downloadUrl - Download URL (relative path)
+   * @param pageId - Confluence page ID
+   * @param attachmentId - Attachment ID
    * @param options - IO options for timeout and cancellation
    */
   async downloadAttachment(
-    downloadUrl: string,
+    pageId: string,
+    attachmentId: string,
     options?: IOOptions,
   ): Promise<Buffer> {
     const startTime = Date.now();
     const signal = createAbortSignal(options);
+    const url = `/content/${pageId}/child/attachment/${attachmentId}/download`;
 
     logger.debug({
       event: "confluence_api_call",
       status: "started",
       method: "GET",
-      target: `attachment${downloadUrl}`,
+      target: `page/${pageId}/attachment/${attachmentId}/download`,
       timeoutMs: options?.timeoutMs,
     });
 
     try {
-      const response = await this.api.get(downloadUrl, {
+      const response = await this.api.get(url, {
         responseType: "arraybuffer",
         signal,
       });
@@ -596,7 +599,7 @@ export class ConfluenceClient {
         status: "completed",
         durationMs,
         method: "GET",
-        target: `attachment${downloadUrl}`,
+        target: `page/${pageId}/attachment/${attachmentId}/download`,
         statusCode: response.status,
         size: response.data.length,
       });
@@ -612,7 +615,7 @@ export class ConfluenceClient {
           status: "failed",
           durationMs,
           method: "GET",
-          target: `attachment${downloadUrl}`,
+          target: `page/${pageId}/attachment/${attachmentId}/download`,
           abortReason: reason,
         });
         throw error;
@@ -622,7 +625,7 @@ export class ConfluenceClient {
         const status = error.response?.status || 0;
         const domainError = this.createDomainError(
           error,
-          downloadUrl,
+          `page/${pageId}/attachment/${attachmentId}`,
           "download attachment",
         );
 
@@ -631,7 +634,7 @@ export class ConfluenceClient {
           status: "failed",
           durationMs,
           method: "GET",
-          target: `attachment${downloadUrl}`,
+          target: `page/${pageId}/attachment/${attachmentId}/download`,
           statusCode: status,
           error: Logger.serializeError(domainError),
         });
@@ -641,7 +644,7 @@ export class ConfluenceClient {
 
       const unknownError = new ExternalServiceError(
         "confluence",
-        `Unexpected error while downloading attachment ${downloadUrl}`,
+        `Unexpected error while downloading attachment ${attachmentId} from page ${pageId}`,
         error,
       );
 
@@ -650,7 +653,7 @@ export class ConfluenceClient {
         status: "failed",
         durationMs,
         method: "GET",
-        target: `attachment${downloadUrl}`,
+        target: `page/${pageId}/attachment/${attachmentId}/download`,
         error: Logger.serializeError(unknownError),
       });
 
