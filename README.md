@@ -9,6 +9,8 @@ A Model Context Protocol (MCP) server for Confluence integration with auto-gener
 - **Auto-Generated Content**: Manage content between `BEGIN_AUTO_GENERATED` and `END_AUTO_GENERATED` markers
 - **DOM-based Processing**: Robust HTML parsing with cheerio
 - **Safe Updates**: Preserves document structure and formatting
+- **Markdown Support**: Convert between Confluence Storage Format and Markdown
+- **Image Support**: Automatic upload/download of images with Markdown import/export
 
 ## Prerequisites
 
@@ -55,6 +57,10 @@ pnpm mcp:dev
 - **confluence_read**: Read auto-generated content from Confluence page
 - **confluence_update**: Update auto-generated content in Confluence page  
 - **confluence_info**: Get Confluence page information
+- **confluence_read_as_markdown**: Read auto-generated content as Markdown format
+- **confluence_write_as_markdown**: Update auto-generated content with Markdown format
+- **confluence_import_markdown_with_images**: Import Markdown file with images to Confluence (uploads images as attachments)
+- **confluence_export_markdown_with_images**: Export Confluence page to Markdown file with images (downloads images to local directory)
 
 ### CLI Tools
 
@@ -69,7 +75,29 @@ pnpm confluence read "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/
 
 # Update auto-generated content
 pnpm confluence update "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/ID/PAGE" "New content"
+
+# Export auto-generated content to Markdown file
+pnpm confluence export-md "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/ID/PAGE" -f output.md
+
+# Import Markdown file to auto-generated section
+pnpm confluence import-md "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/ID/PAGE" -f input.md
+
+# Export page with images to directory
+pnpm confluence export-markdown "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/ID/PAGE" -o ./output-dir
+
+# Import Markdown with images from file
+pnpm confluence import-markdown "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/ID/PAGE" -f ./input-dir/document.md
 ```
+
+#### Image Support
+
+The `import-markdown` and `export-markdown` commands support automatic image handling:
+
+- **Import**: Images referenced in Markdown (e.g., `![alt](./image.png)`) are automatically uploaded as Confluence attachments
+- **Export**: Images in Confluence pages are automatically downloaded to the output directory
+- **Formats**: Supports PNG, JPG, JPEG, GIF, SVG, WebP
+- **Size Limit**: Maximum 10MB per image
+- **Deduplication**: Duplicate images are automatically detected and uploaded/downloaded only once
 
 ## Architecture
 
