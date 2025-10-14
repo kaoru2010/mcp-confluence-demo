@@ -46,6 +46,7 @@
     "form-data": "^4.0.1",
     "marked": "^16.4.0",
     "turndown": "^7.2.1",
+    "turndown-plugin-gfm": "^1.0.2",
     "xml2js": "^0.6.2"
   }
 }

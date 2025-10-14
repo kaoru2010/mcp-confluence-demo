@@ -2,6 +2,7 @@ import path from "node:path";
 import * as cheerio from "cheerio";
 import { marked } from "marked";
 import TurndownService from "turndown";
+import { gfm } from "turndown-plugin-gfm";
 import type { ConfluenceImageReference, ImageReference } from "./types.js";
 
 /**
@@ -18,6 +19,9 @@ export class MarkdownConverter {
       emDelimiter: "*", // *italic*
       strongDelimiter: "**", // **bold**
     });
+
+    // GitHub Flavored Markdownプラグインを使用（テーブルサポート）
+    this.turndownService.use(gfm);
 
     // Confluenceの特殊な要素のカスタムルールを追加
     this.addConfluenceRules();
@@ -57,16 +61,8 @@ export class MarkdownConverter {
       },
     });
 
-    // 空のテーブルセルも保持
-    this.turndownService.addRule("emptyTableCell", {
-      filter: ["td", "th"],
-      replacement: (content, node) => {
-        const cellContent = content.trim() || " ";
-        return node.nodeName === "TH"
-          ? ` ${cellContent} |`
-          : ` ${cellContent} |`;
-      },
-    });
+    // 注意: テーブルの処理はGFMプラグインに任せます
+    // emptyTableCellのカスタムルールは削除しました
   }
 
   /**
