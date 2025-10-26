@@ -370,6 +370,7 @@ export class ConfluenceClient {
           downloadUrl: attachment._links?.download || "",
           fileSize: attachment.extensions?.fileSize || 0,
           mediaType: attachment.extensions?.mediaType || "",
+          version: attachment.version?.number ?? 1,
         })) || []
       );
     } catch (error) {

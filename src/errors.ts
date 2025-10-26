@@ -121,3 +121,9 @@ export class InvalidUrlError extends DomainError {
     );
   }
 }
+
+export class ConfluenceClientError extends DomainError {
+  constructor(message: string, cause?: unknown, code?: string) {
+    super(message, cause, code ?? "CONFLUENCE_CLIENT_ERROR");
+  }
+}

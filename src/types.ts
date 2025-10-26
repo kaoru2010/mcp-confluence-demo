@@ -86,6 +86,72 @@ export interface AttachmentInfo {
   downloadUrl: string;
   fileSize: number;
   mediaType: string;
+  version?: number;
+}
+
+export interface AttachmentMeta {
+  id: string;
+  title: string;
+  version: number;
+  downloadedAt: string;
+  storagePath: string;
+  sha256: string;
+  mediaType?: string;
+  fileSize?: number;
+  lastUploadedAt?: string;
+}
+
+export interface PageMeta {
+  pageId: string;
+  title: string;
+  version: number;
+  downloadedAt: string;
+  storagePath: string;
+  storageSha256: string;
+  lastUploadedAt?: string;
+  lastAttachmentScanAt?: string;
+  attachments: AttachmentMeta[];
+}
+
+export interface ConfluenceDataPaths {
+  baseDir: string;
+  pageDir: string;
+  pageFile: string;
+  metaFile: string;
+  attachmentsDir: string;
+  logDir: string;
+}
+
+export interface BodyDownloadResult {
+  success: boolean;
+  skipped: boolean;
+  pageFile: string;
+  metaFile: string;
+  logFiles: string[];
+}
+
+export interface BodyUploadResult {
+  success: boolean;
+  pageUpdated: boolean;
+  metaFile: string;
+  logFiles: string[];
+}
+
+export interface AttachmentsDownloadResult {
+  success: boolean;
+  downloaded: string[];
+  skipped: string[];
+  removed: string[];
+  metaFile: string;
+  logFiles: string[];
+}
+
+export interface AttachmentsUploadResult {
+  success: boolean;
+  uploaded: string[];
+  skipped: string[];
+  metaFile: string;
+  logFiles: string[];
 }
 
 /**
