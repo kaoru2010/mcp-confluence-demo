@@ -39,6 +39,34 @@ export class StorageSyncManager {
     this.client = new ConfluenceClient(config);
   }
 
+  /**
+   * テーブルXHTMLに改行を追加して可読性を向上させる
+   */
+  private formatTableXhtml(xhtml: string): string {
+    return xhtml
+      .replace(/<tbody><tr>/g, "<tbody>\n<tr>")
+      .replace(/<thead><tr>/g, "<thead>\n<tr>")
+      .replace(/<\/tr><\/tbody>/g, "</tr>\n</tbody>")
+      .replace(/<\/tr><\/thead>/g, "</tr>\n</thead>")
+      .replace(/<\/tr><tr>/g, "</tr>\n<tr>")
+      .replace(/><colgroup><col /g, ">\n<colgroup><col ")
+      .replace(/<\/colgroup><tbody>/g, "</colgroup>\n<tbody>");
+  }
+
+  /**
+   * フォーマットされたテーブルXHTMLから改行を削除して元に戻す
+   */
+  private unformatTableXhtml(xhtml: string): string {
+    return xhtml
+      .replace(/<tbody>\n<tr>/g, "<tbody><tr>")
+      .replace(/<thead>\n<tr>/g, "<thead><tr>")
+      .replace(/<\/tr>\n<\/tbody>/g, "</tr></tbody>")
+      .replace(/<\/tr>\n<\/thead>/g, "</tr></thead>")
+      .replace(/<\/tr>\n<tr>/g, "</tr><tr>")
+      .replace(/>\n<colgroup><col /g, "><colgroup><col ")
+      .replace(/<\/colgroup>\n<tbody>/g, "</colgroup><tbody>");
+  }
+
   async downloadBody(params: {
     pageUrl: string;
     outputDir?: string;
@@ -70,7 +98,8 @@ export class StorageSyncManager {
         existingMeta?.storageSha256 === storageSha;
 
       if (!shouldSkip) {
-        await writeTextFile(paths.pageFile, storageContent);
+        const formattedContent = this.formatTableXhtml(storageContent);
+        await writeTextFile(paths.pageFile, formattedContent);
         logger.info({
           event: "body_download",
           status: "completed",
@@ -173,8 +202,9 @@ export class StorageSyncManager {
         );
       }
 
-      const storageContent = await fs.readFile(paths.pageFile, "utf-8");
-      const localSha = computeSha256(storageContent);
+      const formattedContent = await fs.readFile(paths.pageFile, "utf-8");
+      const storageContent = this.unformatTableXhtml(formattedContent);
+      const localSha = computeSha256(formattedContent);
       const pageUpdated = localSha !== meta.storageSha256;
 
       let updatedMeta: PageMeta = { ...meta };
