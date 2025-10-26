@@ -345,24 +345,63 @@ class ConfluenceMcpServer {
       });
     };
 
-    process.on("SIGINT", () => {
+    const shutdown = async (signal: string) => {
       logger.info({
         event: "server_lifecycle",
-        status: "completed",
+        status: "shutting_down",
         action: "shutdown",
-        reason: "SIGINT",
+        reason: signal,
       });
-      process.exit(0);
+
+      try {
+        await this.stop();
+        process.exit(0);
+      } catch (error) {
+        logger.error({
+          event: "server_lifecycle",
+          status: "failed",
+          action: "shutdown",
+          reason: signal,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        process.exit(1);
+      }
+    };
+
+    process.on("SIGINT", () => {
+      shutdown("SIGINT").catch((error) => {
+        console.error("Shutdown error:", error);
+        process.exit(1);
+      });
     });
 
     process.on("SIGTERM", () => {
-      logger.info({
-        event: "server_lifecycle",
-        status: "completed",
-        action: "shutdown",
-        reason: "SIGTERM",
+      shutdown("SIGTERM").catch((error) => {
+        console.error("Shutdown error:", error);
+        process.exit(1);
       });
-      process.exit(0);
+    });
+
+    process.on("uncaughtException", (error) => {
+      logger.error({
+        event: "uncaught_exception",
+        status: "failed",
+        error: Logger.serializeError(error),
+      });
+      shutdown("uncaughtException").catch(() => {
+        process.exit(1);
+      });
+    });
+
+    process.on("unhandledRejection", (reason) => {
+      logger.error({
+        event: "unhandled_rejection",
+        status: "failed",
+        reason: reason instanceof Error ? Logger.serializeError(reason) : String(reason),
+      });
+      shutdown("unhandledRejection").catch(() => {
+        process.exit(1);
+      });
     });
   }
 
@@ -672,6 +711,28 @@ class ConfluenceMcpServer {
     });
   }
 
+  /**
+   * サーバーを停止
+   */
+  async stop(): Promise<void> {
+    try {
+      await this.server.close();
+      logger.info({
+        event: "server_lifecycle",
+        status: "completed",
+        action: "shutdown",
+      });
+    } catch (error) {
+      logger.error({
+        event: "server_lifecycle",
+        status: "failed",
+        action: "shutdown",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
   private async handleDownloadBody(args: any): Promise<any> {
     const { url, email, outputDir } = args;
 
@@ -904,8 +965,21 @@ class ConfluenceMcpServer {
 
 // メイン実行
 async function main(): Promise<void> {
-  const server = new ConfluenceMcpServer();
-  await server.start();
+  try {
+    const server = new ConfluenceMcpServer();
+    await server.start();
+
+    // サーバーは無期限に実行される
+    // シグナルハンドラーが終了を管理
+  } catch (error) {
+    logger.error({
+      event: "server_lifecycle",
+      status: "failed",
+      action: "startup",
+      error: error instanceof Error ? Logger.serializeError(error) : String(error),
+    });
+    throw error;
+  }
 }
 
 // ES modules用のmain実行チェック
