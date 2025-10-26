@@ -16,6 +16,7 @@ import { Logger, logger } from "./logger.js";
 import { markdownConverter } from "./markdown-converter.js";
 import { MarkdownExporter } from "./markdown-exporter.js";
 import { MarkdownImporter } from "./markdown-importer.js";
+import { StorageSyncManager } from "./storage-sync-manager.js";
 import type { ConfluenceConfig, IOOptions } from "./types.js";
 
 // 環境変数を読み込み
@@ -54,48 +55,6 @@ class ConfluenceMcpServer {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
         tools: [
-          {
-            name: "confluence_read",
-            description: "Read auto-generated content from Confluence page",
-            inputSchema: {
-              type: "object",
-              properties: {
-                url: {
-                  type: "string",
-                  description: "Confluence page URL",
-                },
-                email: {
-                  type: "string",
-                  description:
-                    "User email for authentication (optional if CONFLUENCE_EMAIL env var is set)",
-                },
-              },
-              required: ["url"],
-            },
-          },
-          {
-            name: "confluence_update",
-            description: "Update auto-generated content in Confluence page",
-            inputSchema: {
-              type: "object",
-              properties: {
-                url: {
-                  type: "string",
-                  description: "Confluence page URL",
-                },
-                content: {
-                  type: "string",
-                  description: "New content for auto-generated section",
-                },
-                email: {
-                  type: "string",
-                  description:
-                    "User email for authentication (optional if CONFLUENCE_EMAIL env var is set)",
-                },
-              },
-              required: ["url", "content"],
-            },
-          },
           {
             name: "confluence_info",
             description: "Get Confluence page information",
@@ -161,58 +120,135 @@ class ConfluenceMcpServer {
             },
           },
           {
-            name: "confluence_import_markdown_with_images",
+            name: "confluence_download_body",
             description:
-              "Import Markdown file with images to Confluence page (auto-generated section). Images referenced in the Markdown will be automatically uploaded as attachments.",
+              "Download Confluence page storage format (XHTML) to confluence-data directory without attachments.",
             inputSchema: {
               type: "object",
               properties: {
                 url: {
                   type: "string",
                   description: "Confluence page URL",
-                },
-                markdownFilePath: {
-                  type: "string",
-                  description:
-                    "Path to the Markdown file to import (absolute or relative path)",
                 },
                 email: {
                   type: "string",
                   description:
                     "User email for authentication (optional if CONFLUENCE_EMAIL env var is set)",
-                },
-              },
-              required: ["url", "markdownFilePath"],
-            },
-          },
-          {
-            name: "confluence_export_markdown_with_images",
-            description:
-              "Export Confluence page to Markdown file with images (auto-generated section). Images will be downloaded to the output directory.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                url: {
-                  type: "string",
-                  description: "Confluence page URL",
                 },
                 outputDir: {
                   type: "string",
                   description:
-                    "Output directory path (absolute or relative path)",
+                    "Optional base directory for storage files (defaults to confluence-data)",
                 },
-                outputFileName: {
+                timeoutMs: {
+                  type: "integer",
+                  description: "Request timeout in milliseconds",
+                },
+              },
+              required: ["url"],
+            },
+          },
+          {
+            name: "confluence_upload_body",
+            description:
+              "Upload Confluence page storage XHTML from confluence-data directory (attachments not modified).",
+            inputSchema: {
+              type: "object",
+              properties: {
+                url: {
                   type: "string",
-                  description:
-                    "Output Markdown filename (optional, defaults to page title)",
+                  description: "Confluence page URL",
                 },
                 email: {
                   type: "string",
                   description:
                     "User email for authentication (optional if CONFLUENCE_EMAIL env var is set)",
                 },
+                inputDir: {
+                  type: "string",
+                  description:
+                    "Optional base directory for storage files (defaults to confluence-data)",
+                },
+                timeoutMs: {
+                  type: "integer",
+                  description: "Request timeout in milliseconds",
+                },
               },
-              required: ["url", "outputDir"],
+              required: ["url"],
+            },
+          },
+          {
+            name: "confluence_download_attachments",
+            description:
+              "Download attachments of a Confluence page to confluence-data directory.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                url: {
+                  type: "string",
+                  description: "Confluence page URL",
+                },
+                email: {
+                  type: "string",
+                  description:
+                    "User email for authentication (optional if CONFLUENCE_EMAIL env var is set)",
+                },
+                outputDir: {
+                  type: "string",
+                  description:
+                    "Optional base directory for storage files (defaults to confluence-data)",
+                },
+                attachmentTitles: {
+                  type: "array",
+                  description:
+                    "Optional list of attachment file names to download (others skipped)",
+                  items: {
+                    type: "string",
+                  },
+                },
+                timeoutMs: {
+                  type: "integer",
+                  description: "Request timeout in milliseconds",
+                },
+              },
+              required: ["url"],
+            },
+          },
+          {
+            name: "confluence_upload_attachments",
+            description:
+              "Upload attachments from confluence-data directory back to Confluence page.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                url: {
+                  type: "string",
+                  description: "Confluence page URL",
+                },
+                email: {
+                  type: "string",
+                  description:
+                    "User email for authentication (optional if CONFLUENCE_EMAIL env var is set)",
+                },
+                inputDir: {
+                  type: "string",
+                  description:
+                    "Optional base directory for storage files (defaults to confluence-data)",
+                },
+                attachmentTitles: {
+                  type: "array",
+                  description:
+                    "Optional list of attachment file names to upload (others skipped)",
+                  items: {
+                    type: "string",
+                  },
+                },
+                timeoutMs: {
+                  type: "integer",
+                  description: "Request timeout in milliseconds",
+                },
+              },
+              required: ["url"],
             },
           },
         ] as Tool[],
@@ -236,12 +272,6 @@ class ConfluenceMcpServer {
         try {
           let result: any;
           switch (name) {
-            case "confluence_read":
-              result = await this.handleRead(args);
-              break;
-            case "confluence_update":
-              result = await this.handleUpdate(args);
-              break;
             case "confluence_info":
               result = await this.handleInfo(args);
               break;
@@ -251,11 +281,17 @@ class ConfluenceMcpServer {
             case "confluence_write_as_markdown":
               result = await this.handleWriteAsMarkdown(args);
               break;
-            case "confluence_import_markdown_with_images":
-              result = await this.handleImportMarkdownWithImages(args);
+            case "confluence_download_body":
+              result = await this.handleDownloadBody(args);
               break;
-            case "confluence_export_markdown_with_images":
-              result = await this.handleExportMarkdownWithImages(args);
+            case "confluence_upload_body":
+              result = await this.handleUploadBody(args);
+              break;
+            case "confluence_download_attachments":
+              result = await this.handleDownloadAttachments(args);
+              break;
+            case "confluence_upload_attachments":
+              result = await this.handleUploadAttachments(args);
               break;
             default:
               throw new ValidationError("tool", `Unknown tool: ${name}`);
@@ -309,24 +345,63 @@ class ConfluenceMcpServer {
       });
     };
 
-    process.on("SIGINT", () => {
+    const shutdown = async (signal: string) => {
       logger.info({
         event: "server_lifecycle",
-        status: "completed",
+        status: "shutting_down",
         action: "shutdown",
-        reason: "SIGINT",
+        reason: signal,
       });
-      process.exit(0);
+
+      try {
+        await this.stop();
+        process.exit(0);
+      } catch (error) {
+        logger.error({
+          event: "server_lifecycle",
+          status: "failed",
+          action: "shutdown",
+          reason: signal,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        process.exit(1);
+      }
+    };
+
+    process.on("SIGINT", () => {
+      shutdown("SIGINT").catch((error) => {
+        console.error("Shutdown error:", error);
+        process.exit(1);
+      });
     });
 
     process.on("SIGTERM", () => {
-      logger.info({
-        event: "server_lifecycle",
-        status: "completed",
-        action: "shutdown",
-        reason: "SIGTERM",
+      shutdown("SIGTERM").catch((error) => {
+        console.error("Shutdown error:", error);
+        process.exit(1);
       });
-      process.exit(0);
+    });
+
+    process.on("uncaughtException", (error) => {
+      logger.error({
+        event: "uncaught_exception",
+        status: "failed",
+        error: Logger.serializeError(error),
+      });
+      shutdown("uncaughtException").catch(() => {
+        process.exit(1);
+      });
+    });
+
+    process.on("unhandledRejection", (reason) => {
+      logger.error({
+        event: "unhandled_rejection",
+        status: "failed",
+        reason: reason instanceof Error ? Logger.serializeError(reason) : String(reason),
+      });
+      shutdown("unhandledRejection").catch(() => {
+        process.exit(1);
+      });
     });
   }
 
@@ -395,169 +470,6 @@ class ConfluenceMcpServer {
       this.confluenceClient = new ConfluenceClient(config);
     }
     return this.confluenceClient;
-  }
-
-  /**
-   * confluence_read ツールの処理
-   */
-  private async handleRead(args: any): Promise<any> {
-    const { url, email } = args;
-
-    if (!url || typeof url !== "string") {
-      throw new ValidationError(
-        "url",
-        "URL parameter is required and must be a string",
-      );
-    }
-
-    const config = this.createConfig(url, email);
-    const client = this.getConfluenceClient(config);
-
-    const pageId = ConfluenceClient.extractPageIdFromUrl(url);
-
-    logger.debug({
-      event: "page_operation",
-      status: "started",
-      operation: "read",
-      target: `page/${pageId}`,
-    });
-
-    // Create IO options with default timeout
-    const ioOptions: IOOptions = {
-      timeoutMs: args.timeoutMs,
-    };
-
-    const page = await client.getPage(pageId, ioOptions);
-
-    logger.info({
-      event: "page_operation",
-      status: "completed",
-      operation: "read",
-      target: `page/${pageId}`,
-      pageTitle: page.title,
-    });
-
-    const content = page.body.storage.value;
-    const hasMarkers = DomAutoGeneratedHandler.hasAutoGeneratedMarkers(content);
-
-    if (!hasMarkers) {
-      logger.warn({
-        event: "page_validation",
-        status: "completed",
-        target: `page/${pageId}`,
-        pageTitle: page.title,
-        issue: "no_auto_generated_markers",
-      });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Page "${page.title}" does not contain auto-generated markers (BEGIN_AUTO_GENERATED/END_AUTO_GENERATED).`,
-          },
-        ],
-      };
-    }
-
-    const autoGeneratedContent =
-      DomAutoGeneratedHandler.getAutoGeneratedContent(content);
-
-    logger.debug({
-      event: "content_extraction",
-      status: "completed",
-      target: `page/${pageId}`,
-      contentLength: autoGeneratedContent.length,
-    });
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Page: ${page.title}\\nPage ID: ${page.id}\\nVersion: ${page.version.number}\\n\\nAuto-generated content:\\n${autoGeneratedContent}`,
-        },
-      ],
-    };
-  }
-
-  /**
-   * confluence_update ツールの処理
-   */
-  private async handleUpdate(args: any): Promise<any> {
-    const { url, content: newContent, email } = args;
-
-    if (!url || typeof url !== "string") {
-      throw new ValidationError(
-        "url",
-        "URL parameter is required and must be a string",
-      );
-    }
-
-    if (!newContent || typeof newContent !== "string") {
-      throw new ValidationError(
-        "content",
-        "Content parameter is required and must be a string",
-      );
-    }
-
-    const config = this.createConfig(url, email);
-    const client = this.getConfluenceClient(config);
-
-    const pageId = ConfluenceClient.extractPageIdFromUrl(url);
-
-    logger.debug({
-      event: "page_operation",
-      status: "started",
-      operation: "update",
-      target: `page/${pageId}`,
-    });
-
-    // Create IO options with default timeout
-    const ioOptions: IOOptions = {
-      timeoutMs: args.timeoutMs,
-    };
-
-    const page = await client.getPage(pageId, ioOptions);
-
-    const originalContent = page.body.storage.value;
-    const updatedContent = DomAutoGeneratedHandler.replaceAutoGeneratedSection(
-      originalContent,
-      newContent,
-    );
-
-    logger.debug({
-      event: "content_preparation",
-      status: "completed",
-      target: `page/${pageId}`,
-      pageTitle: page.title,
-      originalVersion: page.version.number,
-      newContentLength: newContent.length,
-    });
-
-    const updatedPage = await client.updatePage(
-      pageId,
-      page.title,
-      updatedContent,
-      page.version.number,
-      ioOptions,
-    );
-
-    logger.info({
-      event: "page_operation",
-      status: "completed",
-      operation: "update",
-      target: `page/${pageId}`,
-      pageTitle: page.title,
-      oldVersion: page.version.number,
-      newVersion: updatedPage.version.number,
-    });
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Successfully updated page "${page.title}".\\nNew version: ${updatedPage.version.number}\\nUpdated content: ${newContent}`,
-        },
-      ],
-    };
   }
 
   /**
@@ -785,134 +697,6 @@ class ConfluenceMcpServer {
   }
 
   /**
-   * confluence_import_markdown_with_images ツールの処理
-   */
-  private async handleImportMarkdownWithImages(args: any): Promise<any> {
-    const { url, markdownFilePath, email } = args;
-
-    if (!url || typeof url !== "string") {
-      throw new ValidationError(
-        "url",
-        "URL parameter is required and must be a string",
-      );
-    }
-
-    if (!markdownFilePath || typeof markdownFilePath !== "string") {
-      throw new ValidationError(
-        "markdownFilePath",
-        "markdownFilePath parameter is required and must be a string",
-      );
-    }
-
-    const config = this.createConfig(url, email);
-
-    logger.debug({
-      event: "markdown_import",
-      status: "started",
-      markdownFile: markdownFilePath,
-    });
-
-    // Create IO options with default timeout
-    const ioOptions: IOOptions = {
-      timeoutMs: args.timeoutMs,
-    };
-
-    const importer = new MarkdownImporter(config);
-    const result = await importer.import({
-      markdownFilePath,
-      pageUrl: url,
-      options: ioOptions,
-    });
-
-    logger.info({
-      event: "markdown_import",
-      status: "completed",
-      pageId: result.pageId,
-      pageTitle: result.pageTitle,
-      uploadedImages: result.uploadedImages.length,
-    });
-
-    // 画像リストをフォーマット
-    const imagesList =
-      result.uploadedImages.length > 0
-        ? `\\n\\nUploaded images (${result.uploadedImages.length}):\\n${result.uploadedImages.map((img) => `  - ${img}`).join("\\n")}`
-        : "";
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Successfully imported Markdown with images to page "${result.pageTitle}".\\nPage ID: ${result.pageId}\\nNew version: ${result.pageVersion}\\nImages uploaded: ${result.uploadedImages.length}${imagesList}`,
-        },
-      ],
-    };
-  }
-
-  /**
-   * confluence_export_markdown_with_images ツールの処理
-   */
-  private async handleExportMarkdownWithImages(args: any): Promise<any> {
-    const { url, outputDir, outputFileName, email } = args;
-
-    if (!url || typeof url !== "string") {
-      throw new ValidationError(
-        "url",
-        "URL parameter is required and must be a string",
-      );
-    }
-
-    if (!outputDir || typeof outputDir !== "string") {
-      throw new ValidationError(
-        "outputDir",
-        "outputDir parameter is required and must be a string",
-      );
-    }
-
-    const config = this.createConfig(url, email);
-
-    logger.debug({
-      event: "markdown_export",
-      status: "started",
-      outputDir,
-    });
-
-    // Create IO options with default timeout
-    const ioOptions: IOOptions = {
-      timeoutMs: args.timeoutMs,
-    };
-
-    const exporter = new MarkdownExporter(config);
-    const result = await exporter.export({
-      pageUrl: url,
-      outputDir,
-      outputFileName,
-      options: ioOptions,
-    });
-
-    logger.info({
-      event: "markdown_export",
-      status: "completed",
-      markdownFile: result.markdownFile,
-      downloadedImages: result.downloadedImages.length,
-    });
-
-    // 画像リストをフォーマット
-    const imagesList =
-      result.downloadedImages.length > 0
-        ? `\\n\\nDownloaded images (${result.downloadedImages.length}):\\n${result.downloadedImages.map((img) => `  - ${img}`).join("\\n")}`
-        : "";
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Successfully exported Confluence page to Markdown with images.\\nMarkdown file: ${result.markdownFile}\\nOutput directory: ${result.outputDir}\\nImages downloaded: ${result.downloadedImages.length}${imagesList}`,
-        },
-      ],
-    };
-  }
-
-  /**
    * サーバーを開始
    */
   async start(): Promise<void> {
@@ -926,12 +710,276 @@ class ConfluenceMcpServer {
       version: "1.0.0",
     });
   }
+
+  /**
+   * サーバーを停止
+   */
+  async stop(): Promise<void> {
+    try {
+      await this.server.close();
+      logger.info({
+        event: "server_lifecycle",
+        status: "completed",
+        action: "shutdown",
+      });
+    } catch (error) {
+      logger.error({
+        event: "server_lifecycle",
+        status: "failed",
+        action: "shutdown",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  private async handleDownloadBody(args: any): Promise<any> {
+    const { url, email, outputDir } = args;
+
+    if (!url || typeof url !== "string") {
+      throw new ValidationError(
+        "url",
+        "URL parameter is required and must be a string",
+      );
+    }
+
+    const config = this.createConfig(url, email);
+    const pageId = ConfluenceClient.extractPageIdFromUrl(url);
+
+    logger.debug({
+      event: "body_download",
+      status: "started",
+      target: `page/${pageId}`,
+      outputDir,
+    });
+
+    const syncManager = new StorageSyncManager(config);
+    const result = await syncManager.downloadBody({
+      pageUrl: url,
+      outputDir,
+      options: {
+        timeoutMs: args.timeoutMs,
+      },
+    });
+
+    logger.info({
+      event: "body_download",
+      status: result.skipped ? "skipped" : "completed",
+      target: `page/${pageId}`,
+      skipped: result.skipped,
+    });
+
+    const logLines = result.logFiles.map((entry) => `  - ${entry}`).join("\n");
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Body download completed for page ${pageId}.\nSkipped: ${result.skipped}\nPage file: ${result.pageFile}\nMeta file: ${result.metaFile}\nLog files:\n${logLines}`,
+        },
+      ],
+    };
+  }
+
+  private async handleUploadBody(args: any): Promise<any> {
+    const { url, email, inputDir } = args;
+
+    if (!url || typeof url !== "string") {
+      throw new ValidationError(
+        "url",
+        "URL parameter is required and must be a string",
+      );
+    }
+
+    const config = this.createConfig(url, email);
+    const pageId = ConfluenceClient.extractPageIdFromUrl(url);
+
+    logger.debug({
+      event: "body_upload",
+      status: "started",
+      target: `page/${pageId}`,
+      inputDir,
+    });
+
+    const syncManager = new StorageSyncManager(config);
+    const result = await syncManager.uploadBody({
+      pageUrl: url,
+      inputDir,
+      options: {
+        timeoutMs: args.timeoutMs,
+      },
+    });
+
+    logger.info({
+      event: "body_upload",
+      status: "completed",
+      target: `page/${pageId}`,
+      pageUpdated: result.pageUpdated,
+    });
+
+    const logLines = result.logFiles.map((entry) => `  - ${entry}`).join("\n");
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Body upload completed for page ${pageId}.\nPage updated: ${result.pageUpdated}\nMeta file: ${result.metaFile}\nLog files:\n${logLines}`,
+        },
+      ],
+    };
+  }
+
+  private async handleDownloadAttachments(args: any): Promise<any> {
+    const { url, email, outputDir, attachmentTitles } = args;
+
+    if (!url || typeof url !== "string") {
+      throw new ValidationError(
+        "url",
+        "URL parameter is required and must be a string",
+      );
+    }
+
+    if (attachmentTitles && !Array.isArray(attachmentTitles)) {
+      throw new ValidationError(
+        "attachmentTitles",
+        "attachmentTitles must be an array of strings",
+      );
+    }
+
+    const config = this.createConfig(url, email);
+    const pageId = ConfluenceClient.extractPageIdFromUrl(url);
+
+    logger.debug({
+      event: "attachments_download",
+      status: "started",
+      target: `page/${pageId}`,
+      outputDir,
+      filterCount: attachmentTitles?.length ?? 0,
+    });
+
+    const syncManager = new StorageSyncManager(config);
+    const downloadParams: {
+      pageUrl: string;
+      outputDir: any;
+      attachmentFilter?: { includeTitles: string[] };
+      options: { timeoutMs: any };
+    } = {
+      pageUrl: url,
+      outputDir,
+      options: {
+        timeoutMs: args.timeoutMs,
+      },
+    };
+    if (attachmentTitles) {
+      downloadParams.attachmentFilter = { includeTitles: attachmentTitles as string[] };
+    }
+    const result = await syncManager.downloadAttachments(downloadParams);
+
+    logger.info({
+      event: "attachments_download",
+      status: "completed",
+      target: `page/${pageId}`,
+      downloaded: result.downloaded.length,
+      skipped: result.skipped.length,
+      removed: result.removed.length,
+    });
+
+    const logLines = result.logFiles.map((entry) => `  - ${entry}`).join("\n");
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Attachments download completed for page ${pageId}.\nDownloaded: ${result.downloaded.join(", ") || "none"}\nSkipped: ${result.skipped.join(", ") || "none"}\nRemoved: ${result.removed.join(", ") || "none"}\nMeta file: ${result.metaFile}\nLog files:\n${logLines}`,
+        },
+      ],
+    };
+  }
+
+  private async handleUploadAttachments(args: any): Promise<any> {
+    const { url, email, inputDir, attachmentTitles } = args;
+
+    if (!url || typeof url !== "string") {
+      throw new ValidationError(
+        "url",
+        "URL parameter is required and must be a string",
+      );
+    }
+
+    if (attachmentTitles && !Array.isArray(attachmentTitles)) {
+      throw new ValidationError(
+        "attachmentTitles",
+        "attachmentTitles must be an array of strings",
+      );
+    }
+
+    const config = this.createConfig(url, email);
+    const pageId = ConfluenceClient.extractPageIdFromUrl(url);
+
+    logger.debug({
+      event: "attachments_upload",
+      status: "started",
+      target: `page/${pageId}`,
+      inputDir,
+      filterCount: attachmentTitles?.length ?? 0,
+    });
+
+    const syncManager = new StorageSyncManager(config);
+    const uploadParams: {
+      pageUrl: string;
+      inputDir: any;
+      attachmentFilter?: { includeTitles: string[] };
+      options: { timeoutMs: any };
+    } = {
+      pageUrl: url,
+      inputDir,
+      options: {
+        timeoutMs: args.timeoutMs,
+      },
+    };
+    if (attachmentTitles) {
+      uploadParams.attachmentFilter = { includeTitles: attachmentTitles as string[] };
+    }
+    const result = await syncManager.uploadAttachments(uploadParams);
+
+    logger.info({
+      event: "attachments_upload",
+      status: "completed",
+      target: `page/${pageId}`,
+      uploaded: result.uploaded.length,
+      skipped: result.skipped.length,
+    });
+
+    const logLines = result.logFiles.map((entry) => `  - ${entry}`).join("\n");
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Attachments upload completed for page ${pageId}.\nUploaded: ${result.uploaded.join(", ") || "none"}\nSkipped: ${result.skipped.join(", ") || "none"}\nMeta file: ${result.metaFile}\nLog files:\n${logLines}`,
+        },
+      ],
+    };
+  }
 }
 
 // メイン実行
 async function main(): Promise<void> {
-  const server = new ConfluenceMcpServer();
-  await server.start();
+  try {
+    const server = new ConfluenceMcpServer();
+    await server.start();
+
+    // サーバーは無期限に実行される
+    // シグナルハンドラーが終了を管理
+  } catch (error) {
+    logger.error({
+      event: "server_lifecycle",
+      status: "failed",
+      action: "startup",
+      error: error instanceof Error ? Logger.serializeError(error) : String(error),
+    });
+    throw error;
+  }
 }
 
 // ES modules用のmain実行チェック

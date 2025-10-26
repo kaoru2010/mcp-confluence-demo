@@ -9,3 +9,5 @@ build/
 # Local AI context documentation (not for commit)
 docs-local/
 tmp/
+/docs
+confluence-data/
