@@ -40,31 +40,97 @@ export class StorageSyncManager {
   }
 
   /**
-   * テーブルXHTMLに改行を追加して可読性を向上させる
+   * テーブルXHTMLに階層的なインデントと改行を追加して可読性を向上させる
+   * 
+   * 階層構造の例:
+   * <table>
+   *   <tbody>
+   *     <tr>
+   *       <td>content</td>
+   *       <th>content</th>
+   *     </tr>
+   *   </tbody>
+   * </table>
+   * 
+   * 注意: td/th タグ内のテキストコンテンツには影響を与えず、
+   * タグ間の空白のみを操作します。
    */
   private formatTableXhtml(xhtml: string): string {
-    return xhtml
-      .replace(/<tbody><tr>/g, "<tbody>\n<tr>")
-      .replace(/<thead><tr>/g, "<thead>\n<tr>")
-      .replace(/<\/tr><\/tbody>/g, "</tr>\n</tbody>")
-      .replace(/<\/tr><\/thead>/g, "</tr>\n</thead>")
-      .replace(/<\/tr><tr>/g, "</tr>\n<tr>")
-      .replace(/><colgroup><col /g, ">\n<colgroup><col ")
-      .replace(/<\/colgroup><tbody>/g, "</colgroup>\n<tbody>");
+    let result = xhtml;
+
+    // Step 1: tbody/thead/tfoot の開始タグの後に改行を追加
+    result = result.replace(/<tbody>/g, "<tbody>\n  ");
+    result = result.replace(/<thead>/g, "<thead>\n  ");
+    result = result.replace(/<tfoot>/g, "<tfoot>\n  ");
+
+    // Step 2: tbody/thead/tfoot の終了タグの前に改行を追加
+    result = result.replace(/<\/tbody>/g, "\n</tbody>");
+    result = result.replace(/<\/thead>/g, "\n</thead>");
+    result = result.replace(/<\/tfoot>/g, "\n</tfoot>");
+
+    // Step 3: tr タグの間に改行を追加
+    result = result.replace(/<\/tr><tr>/g, "</tr>\n  <tr>");
+
+    // Step 4: tr の開始タグの後に改行とインデントを追加
+    result = result.replace(/<tr>/g, "<tr>\n    ");
+
+    // Step 5: tr の終了タグの前に改行とインデントを追加
+    result = result.replace(/<\/tr>/g, "\n  </tr>");
+
+    // Step 6: td/th タグの間に改行とインデントを追加
+    result = result.replace(/<\/td><td>/g, "</td>\n    <td>");
+    result = result.replace(/<\/th><th>/g, "</th>\n    <th>");
+    result = result.replace(/<\/td><th>/g, "</td>\n    <th>");
+    result = result.replace(/<\/th><td>/g, "</th>\n    <td>");
+
+    // Step 7: colgroup の処理
+    result = result.replace(/><colgroup>/g, ">\n<colgroup>");
+    result = result.replace(/<\/colgroup><tbody>/g, "</colgroup>\n<tbody>");
+    result = result.replace(/<\/colgroup><thead>/g, "</colgroup>\n<thead>");
+
+    return result;
   }
 
   /**
-   * フォーマットされたテーブルXHTMLから改行を削除して元に戻す
+   * フォーマットされたテーブルXHTMLから改行とインデントを削除して元に戻す
+   * 
+   * タグ間の空白（改行、スペース、タブ）を削除し、元のコンパクトな形式に戻す
+   * ただし、td/th タグ内のテキストコンテンツは保持します。
    */
   private unformatTableXhtml(xhtml: string): string {
-    return xhtml
-      .replace(/<tbody>\n<tr>/g, "<tbody><tr>")
-      .replace(/<thead>\n<tr>/g, "<thead><tr>")
-      .replace(/<\/tr>\n<\/tbody>/g, "</tr></tbody>")
-      .replace(/<\/tr>\n<\/thead>/g, "</tr></thead>")
-      .replace(/<\/tr>\n<tr>/g, "</tr><tr>")
-      .replace(/>\n<colgroup><col /g, "><colgroup><col ")
-      .replace(/<\/colgroup>\n<tbody>/g, "</colgroup><tbody>");
+    let result = xhtml;
+
+    // Step 1: tbody/thead/tfoot の開始タグ直後の改行とインデントを削除
+    result = result.replace(/<tbody>\n\s*/g, "<tbody>");
+    result = result.replace(/<thead>\n\s*/g, "<thead>");
+    result = result.replace(/<tfoot>\n\s*/g, "<tfoot>");
+
+    // Step 2: tbody/thead/tfoot の終了タグ直前の改行とインデントを削除
+    result = result.replace(/\n\s*<\/tbody>/g, "</tbody>");
+    result = result.replace(/\n\s*<\/thead>/g, "</thead>");
+    result = result.replace(/\n\s*<\/tfoot>/g, "</tfoot>");
+
+    // Step 3: tr タグ間の改行とインデントを削除
+    result = result.replace(/<\/tr>\n\s*<tr>/g, "</tr><tr>");
+
+    // Step 4: tr の開始タグ直後の改行とインデントを削除
+    result = result.replace(/<tr>\n\s*/g, "<tr>");
+
+    // Step 5: tr の終了タグ直前の改行とインデントを削除
+    result = result.replace(/\n\s*<\/tr>/g, "</tr>");
+
+    // Step 6: td/th タグ間の改行とインデントを削除
+    result = result.replace(/<\/td>\n\s*<td>/g, "</td><td>");
+    result = result.replace(/<\/th>\n\s*<th>/g, "</th><th>");
+    result = result.replace(/<\/td>\n\s*<th>/g, "</td><th>");
+    result = result.replace(/<\/th>\n\s*<td>/g, "</th><td>");
+
+    // Step 7: colgroup の改行を削除
+    result = result.replace(/>\n<colgroup>/g, "><colgroup>");
+    result = result.replace(/<\/colgroup>\n<tbody>/g, "</colgroup><tbody>");
+    result = result.replace(/<\/colgroup>\n<thead>/g, "</colgroup><thead>");
+
+    return result;
   }
 
   async downloadBody(params: {
