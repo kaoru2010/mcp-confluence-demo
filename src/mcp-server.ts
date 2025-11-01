@@ -397,7 +397,10 @@ class ConfluenceMcpServer {
       logger.error({
         event: "unhandled_rejection",
         status: "failed",
-        reason: reason instanceof Error ? Logger.serializeError(reason) : String(reason),
+        reason:
+          reason instanceof Error
+            ? Logger.serializeError(reason)
+            : String(reason),
       });
       shutdown("unhandledRejection").catch(() => {
         process.exit(1);
@@ -871,7 +874,9 @@ class ConfluenceMcpServer {
       },
     };
     if (attachmentTitles) {
-      downloadParams.attachmentFilter = { includeTitles: attachmentTitles as string[] };
+      downloadParams.attachmentFilter = {
+        includeTitles: attachmentTitles as string[],
+      };
     }
     const result = await syncManager.downloadAttachments(downloadParams);
 
@@ -938,7 +943,9 @@ class ConfluenceMcpServer {
       },
     };
     if (attachmentTitles) {
-      uploadParams.attachmentFilter = { includeTitles: attachmentTitles as string[] };
+      uploadParams.attachmentFilter = {
+        includeTitles: attachmentTitles as string[],
+      };
     }
     const result = await syncManager.uploadAttachments(uploadParams);
 
@@ -976,7 +983,8 @@ async function main(): Promise<void> {
       event: "server_lifecycle",
       status: "failed",
       action: "startup",
-      error: error instanceof Error ? Logger.serializeError(error) : String(error),
+      error:
+        error instanceof Error ? Logger.serializeError(error) : String(error),
     });
     throw error;
   }

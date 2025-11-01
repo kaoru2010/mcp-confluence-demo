@@ -1,6 +1,6 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createHash } from "node:crypto";
 
 export async function ensureDir(dirPath: string): Promise<void> {
   await fs.mkdir(dirPath, { recursive: true });
@@ -36,7 +36,10 @@ export async function readJsonFile<T>(filePath: string): Promise<T | null> {
   }
 }
 
-export async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
+export async function writeJsonFile(
+  filePath: string,
+  data: unknown,
+): Promise<void> {
   const content = `${JSON.stringify(data, null, 2)}\n`;
   await fs.writeFile(filePath, content, "utf-8");
 }
@@ -122,7 +125,9 @@ export async function readBinaryFile(filePath: string): Promise<Buffer> {
   return fs.readFile(filePath);
 }
 
-export async function writeTextFile(filePath: string, content: string): Promise<void> {
+export async function writeTextFile(
+  filePath: string,
+  content: string,
+): Promise<void> {
   await fs.writeFile(filePath, content, "utf-8");
 }
-

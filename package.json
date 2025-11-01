@@ -17,7 +17,8 @@
     "mcp:dev": "tsc && node dist/mcp-server.js",
     "lint": "biome lint .",
     "format": "biome format . --write",
-    "check": "biome check . --write",
+    "check": "biome check .",
+    "fix": "biome check . --write",
     "test": "echo \"Error: no test specified\" && exit 1",
     "postinstall": "simple-git-hooks"
   },

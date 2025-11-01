@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ConfluenceClient } from "./confluence-client.js";
-import { logger } from "./logger.js";
+import { ConfluenceClientError } from "./errors.js";
 import {
   computeFileSha256,
   computeSha256,
@@ -10,23 +10,23 @@ import {
   guessContentType,
   readBinaryFile,
   readJsonFile,
-  sanitizePathSegment,
   safeUnlink,
+  sanitizePathSegment,
   writeJsonFile,
   writeTextFile,
 } from "./file-utils.js";
+import { logger } from "./logger.js";
 import type {
   AttachmentMeta,
+  AttachmentsDownloadResult,
+  AttachmentsUploadResult,
   BodyDownloadResult,
   BodyUploadResult,
   ConfluenceConfig,
   ConfluenceDataPaths,
   IOOptions,
   PageMeta,
-  AttachmentsDownloadResult,
-  AttachmentsUploadResult,
 } from "./types.js";
-import { ConfluenceClientError } from "./errors.js";
 
 interface AttachmentFilterOptions {
   includeTitles?: string[];
@@ -40,31 +40,145 @@ export class StorageSyncManager {
   }
 
   /**
-   * テーブルXHTMLに改行を追加して可読性を向上させる
+   * テーブルXHTMLに階層的なインデントと改行を追加して可読性を向上させる
+   *
+   * 階層構造の例:
+   * <table>
+   *   <tbody>
+   *     <tr>
+   *       <td>content</td>
+   *       <th>content</th>
+   *     </tr>
+   *   </tbody>
+   * </table>
+   *
+   * 注意: td/th タグ内のテキストコンテンツには影響を与えず、
+   * タグ間の空白のみを操作します。
    */
   private formatTableXhtml(xhtml: string): string {
-    return xhtml
-      .replace(/<tbody><tr>/g, "<tbody>\n<tr>")
-      .replace(/<thead><tr>/g, "<thead>\n<tr>")
-      .replace(/<\/tr><\/tbody>/g, "</tr>\n</tbody>")
-      .replace(/<\/tr><\/thead>/g, "</tr>\n</thead>")
-      .replace(/<\/tr><tr>/g, "</tr>\n<tr>")
-      .replace(/><colgroup><col /g, ">\n<colgroup><col ")
-      .replace(/<\/colgroup><tbody>/g, "</colgroup>\n<tbody>");
+    let result = xhtml;
+
+    // Step 1: table の開始タグの後に改行を追加（属性を考慮）
+    result = result.replace(/(<table[^>]*>)/g, "$1\n");
+
+    // Step 2: tbody/thead/tfoot の開始タグの後に改行を追加
+    result = result.replace(/<tbody>/g, "<tbody>\n  ");
+    result = result.replace(/<thead>/g, "<thead>\n  ");
+    result = result.replace(/<tfoot>/g, "<tfoot>\n  ");
+
+    // Step 3: tbody/thead/tfoot の終了タグの前に改行を追加
+    result = result.replace(/<\/tbody>/g, "\n</tbody>");
+    result = result.replace(/<\/thead>/g, "\n</thead>");
+    result = result.replace(/<\/tfoot>/g, "\n</tfoot>");
+
+    // Step 4: thead/tbody/tfoot の組み合わせに改行を追加
+    result = result.replace(/<\/thead><tbody>/g, "</thead>\n<tbody>");
+    result = result.replace(/<\/tbody><tfoot>/g, "</tbody>\n<tfoot>");
+    result = result.replace(/<\/tfoot><tbody>/g, "</tfoot>\n<tbody>");
+
+    // Step 5: tbody/thead/tfoot と table の終了タグの間に改行を追加
+    result = result.replace(/<\/tbody><\/table>/g, "</tbody>\n</table>");
+    result = result.replace(/<\/thead><\/table>/g, "</thead>\n</table>");
+    result = result.replace(/<\/tfoot><\/table>/g, "</tfoot>\n</table>");
+
+    // Step 6: table の終了タグの後に改行を追加
+    result = result.replace(/<\/table>/g, "</table>\n");
+
+    // Step 7: tr タグの間に改行を追加
+    result = result.replace(/<\/tr><tr>/g, "</tr>\n  <tr>");
+
+    // Step 8: tr の開始タグの後に改行とインデントを追加
+    result = result.replace(/<tr>/g, "<tr>\n    ");
+
+    // Step 9: tr の終了タグの前に改行とインデントを追加
+    result = result.replace(/<\/tr>/g, "\n  </tr>");
+
+    // Step 10: td/th タグの間に改行とインデントを追加（属性付きも考慮）
+    result = result.replace(/<\/td><td(\s|>)/g, "</td>\n    <td$1");
+    result = result.replace(/<\/th><th(\s|>)/g, "</th>\n    <th$1");
+    result = result.replace(/<\/td><th(\s|>)/g, "</td>\n    <th$1");
+    result = result.replace(/<\/th><td(\s|>)/g, "</th>\n    <td$1");
+
+    // Step 11: colgroup の処理
+    result = result.replace(/>\n<colgroup>/g, ">\n<colgroup>");
+    result = result.replace(/<\/colgroup><tbody>/g, "</colgroup>\n<tbody>");
+    result = result.replace(/<\/colgroup><thead>/g, "</colgroup>\n<thead>");
+
+    // Step 12: p/h?/div の処理
+    result = result.replace(/><(p|h[1-6]|div [^>]+)>/g, ">\n      <$1>");
+    result = result.replace(/<\/(p|h[1-6]|div)><\/(td|th)>/g, "</$1>\n    </$2>");
+
+    // Step 13: ul/li の処理
+    result = result.replace(/><((?:li|ul)(?: [^>]+)?)>/g, ">\n      <$1>");
+    result = result.replace(/<\/(li|ul)><\//g, "</$1>\n    </");
+
+    return result;
   }
 
   /**
-   * フォーマットされたテーブルXHTMLから改行を削除して元に戻す
+   * フォーマットされたテーブルXHTMLから改行とインデントを削除して元に戻す
+   *
+   * タグ間の空白（改行、スペース、タブ）を削除し、元のコンパクトな形式に戻す
+   * ただし、td/th タグ内のテキストコンテンツは保持します。
    */
   private unformatTableXhtml(xhtml: string): string {
-    return xhtml
-      .replace(/<tbody>\n<tr>/g, "<tbody><tr>")
-      .replace(/<thead>\n<tr>/g, "<thead><tr>")
-      .replace(/<\/tr>\n<\/tbody>/g, "</tr></tbody>")
-      .replace(/<\/tr>\n<\/thead>/g, "</tr></thead>")
-      .replace(/<\/tr>\n<tr>/g, "</tr><tr>")
-      .replace(/>\n<colgroup><col /g, "><colgroup><col ")
-      .replace(/<\/colgroup>\n<tbody>/g, "</colgroup><tbody>");
+    let result = xhtml;
+
+    // Step 1: table の開始タグ直後の改行を削除
+    result = result.replace(/(<table[^>]*>)\n\s*/g, "$1");
+
+    // Step 2: tbody/thead/tfoot の開始タグ直後の改行とインデントを削除
+    result = result.replace(/<tbody>\n\s*/g, "<tbody>");
+    result = result.replace(/<thead>\n\s*/g, "<thead>");
+    result = result.replace(/<tfoot>\n\s*/g, "<tfoot>");
+
+    // Step 3: tbody/thead/tfoot の終了タグ直前の改行とインデントを削除
+    result = result.replace(/\n\s*<\/tbody>/g, "</tbody>");
+    result = result.replace(/\n\s*<\/thead>/g, "</thead>");
+    result = result.replace(/\n\s*<\/tfoot>/g, "</tfoot>");
+
+    // Step 4: thead/tbody/tfoot の組み合わせの改行を削除
+    result = result.replace(/<\/thead>\n\s*<tbody>/g, "</thead><tbody>");
+    result = result.replace(/<\/tbody>\n\s*<tfoot>/g, "</tbody><tfoot>");
+    result = result.replace(/<\/tfoot>\n\s*<tbody>/g, "</tfoot><tbody>");
+
+    // Step 5: tbody/thead/tfoot と table の終了タグの間の改行を削除
+    result = result.replace(/<\/tbody>\n\s*<\/table>/g, "</tbody></table>");
+    result = result.replace(/<\/thead>\n\s*<\/table>/g, "</thead></table>");
+    result = result.replace(/<\/tfoot>\n\s*<\/table>/g, "</tfoot></table>");
+
+    // Step 6: table の終了タグ直後の改行を削除
+    result = result.replace(/<\/table>\n/g, "</table>");
+
+    // Step 7: tr タグ間の改行とインデントを削除
+    result = result.replace(/<\/tr>\n\s*<tr>/g, "</tr><tr>");
+
+    // Step 8: tr の開始タグ直後の改行とインデントを削除
+    result = result.replace(/<tr>\n\s*/g, "<tr>");
+
+    // Step 9: tr の終了タグ直前の改行とインデントを削除
+    result = result.replace(/\n\s*<\/tr>/g, "</tr>");
+
+    // Step 10: td/th タグ間の改行とインデントを削除（属性付きも考慮）
+    result = result.replace(/<\/td>\n\s*<td(\s|>)/g, "</td><td$1");
+    result = result.replace(/<\/th>\n\s*<th(\s|>)/g, "</th><th$1");
+    result = result.replace(/<\/td>\n\s*<th(\s|>)/g, "</td><th$1");
+    result = result.replace(/<\/th>\n\s*<td(\s|>)/g, "</th><td$1");
+
+    // Step 11: colgroup の改行を削除
+    result = result.replace(/>\n<colgroup>/g, "><colgroup>");
+    result = result.replace(/<\/colgroup>\n\s*<tbody>/g, "</colgroup><tbody>");
+    result = result.replace(/<\/colgroup>\n\s*<thead>/g, "</colgroup><thead>");
+
+    // Step 12: p/h?/div の処理
+    result = result.replace(/>\n\s*<(p|h[1-6]|div [^>]+)>/g, "><$1>");
+    result = result.replace(/<\/(p|h[1-6]|div)>\n\s*<\/(td|th)>/g, "</$1></$2>");
+
+    // Step 13: ul/li の処理
+    result = result.replace(/>\n\s*<((?:li|ul)(?: [^>]+)?)>/g, "><$1>");
+    result = result.replace(/<\/(li|ul)>\n\s*<\//g, "</$1></");
+
+    return result;
   }
 
   async downloadBody(params: {
@@ -77,12 +191,16 @@ export class StorageSyncManager {
     const paths = await this.preparePaths(pageId, outputDir);
 
     const logFiles: string[] = [];
-    const startLog = await this.writeLog(paths.logDir, `download-body-${Date.now()}.log`, {
-      event: "body_download",
-      status: "started",
-      pageId,
-      targetFile: paths.pageFile,
-    });
+    const startLog = await this.writeLog(
+      paths.logDir,
+      `download-body-${Date.now()}.log`,
+      {
+        event: "body_download",
+        status: "started",
+        pageId,
+        targetFile: paths.pageFile,
+      },
+    );
     logFiles.push(startLog);
 
     const existingMeta = await readJsonFile<PageMeta>(paths.metaFile);
@@ -122,10 +240,14 @@ export class StorageSyncManager {
         downloadedAt,
         storagePath: paths.pageFile,
         storageSha256: shouldSkip
-          ? existingMeta?.storageSha256 ?? storageSha
+          ? (existingMeta?.storageSha256 ?? storageSha)
           : storageSha,
-        ...(existingMeta?.lastUploadedAt && { lastUploadedAt: existingMeta.lastUploadedAt }),
-        ...(existingMeta?.lastAttachmentScanAt && { lastAttachmentScanAt: existingMeta.lastAttachmentScanAt }),
+        ...(existingMeta?.lastUploadedAt && {
+          lastUploadedAt: existingMeta.lastUploadedAt,
+        }),
+        ...(existingMeta?.lastAttachmentScanAt && {
+          lastAttachmentScanAt: existingMeta.lastAttachmentScanAt,
+        }),
         attachments: existingMeta?.attachments ?? [],
       };
 
@@ -139,12 +261,16 @@ export class StorageSyncManager {
         logFiles,
       };
     } catch (error) {
-      const errorLog = await this.writeLog(paths.logDir, `error-body-download-${Date.now()}.log`, {
-        event: "body_download",
-        status: "failed",
-        pageId,
-        error,
-      });
+      const errorLog = await this.writeLog(
+        paths.logDir,
+        `error-body-download-${Date.now()}.log`,
+        {
+          event: "body_download",
+          status: "failed",
+          pageId,
+          error,
+        },
+      );
       logFiles.push(errorLog);
       logger.error({
         event: "body_download",
@@ -166,12 +292,16 @@ export class StorageSyncManager {
     const paths = await this.preparePaths(pageId, inputDir);
 
     const logFiles: string[] = [];
-    const startLog = await this.writeLog(paths.logDir, `upload-body-${Date.now()}.log`, {
-      event: "body_upload",
-      status: "started",
-      pageId,
-      sourceFile: paths.pageFile,
-    });
+    const startLog = await this.writeLog(
+      paths.logDir,
+      `upload-body-${Date.now()}.log`,
+      {
+        event: "body_upload",
+        status: "started",
+        pageId,
+        sourceFile: paths.pageFile,
+      },
+    );
     logFiles.push(startLog);
 
     const meta = await readJsonFile<PageMeta>(paths.metaFile);
@@ -224,7 +354,9 @@ export class StorageSyncManager {
           downloadedAt: new Date().toISOString(),
           storagePath: paths.pageFile,
           lastUploadedAt: new Date().toISOString(),
-          ...(updatedMeta.lastAttachmentScanAt && { lastAttachmentScanAt: updatedMeta.lastAttachmentScanAt }),
+          ...(updatedMeta.lastAttachmentScanAt && {
+            lastAttachmentScanAt: updatedMeta.lastAttachmentScanAt,
+          }),
         };
       }
 
@@ -237,12 +369,16 @@ export class StorageSyncManager {
         logFiles,
       };
     } catch (error) {
-      const errorLog = await this.writeLog(paths.logDir, `error-body-upload-${Date.now()}.log`, {
-        event: "body_upload",
-        status: "failed",
-        pageId,
-        error,
-      });
+      const errorLog = await this.writeLog(
+        paths.logDir,
+        `error-body-upload-${Date.now()}.log`,
+        {
+          event: "body_upload",
+          status: "failed",
+          pageId,
+          error,
+        },
+      );
       logFiles.push(errorLog);
       logger.error({
         event: "body_upload",
@@ -264,18 +400,23 @@ export class StorageSyncManager {
     const pageId = ConfluenceClient.extractPageIdFromUrl(pageUrl);
     const paths = await this.preparePaths(pageId, outputDir);
 
-    const includeTitles = attachmentFilter?.includeTitles?.map((title) => title.trim());
-    const filterSet = includeTitles && includeTitles.length > 0
-      ? new Set(includeTitles)
-      : null;
+    const includeTitles = attachmentFilter?.includeTitles?.map((title) =>
+      title.trim(),
+    );
+    const filterSet =
+      includeTitles && includeTitles.length > 0 ? new Set(includeTitles) : null;
 
     const logFiles: string[] = [];
-    const startLog = await this.writeLog(paths.logDir, `download-attachments-${Date.now()}.log`, {
-      event: "attachments_download",
-      status: "started",
-      pageId,
-      filter: includeTitles ?? [],
-    });
+    const startLog = await this.writeLog(
+      paths.logDir,
+      `download-attachments-${Date.now()}.log`,
+      {
+        event: "attachments_download",
+        status: "started",
+        pageId,
+        filter: includeTitles ?? [],
+      },
+    );
     logFiles.push(startLog);
 
     const existingMeta = await readJsonFile<PageMeta>(paths.metaFile);
@@ -305,11 +446,16 @@ export class StorageSyncManager {
       }
 
       const existingAttachments = pageMeta.attachments ?? [];
-      const existingMap = new Map(existingAttachments.map((attachment) => [attachment.title, attachment]));
+      const existingMap = new Map(
+        existingAttachments.map((attachment) => [attachment.title, attachment]),
+      );
 
       for (const attachmentInfo of filteredAttachments) {
         const existing = existingMap.get(attachmentInfo.title);
-        const attachmentPath = path.join(paths.attachmentsDir, attachmentInfo.title);
+        const attachmentPath = path.join(
+          paths.attachmentsDir,
+          attachmentInfo.title,
+        );
 
         if (
           existing &&
@@ -350,7 +496,10 @@ export class StorageSyncManager {
         const infoTitles = new Set(attachmentInfos.map((info) => info.title));
         for (const existing of existingAttachments) {
           if (!infoTitles.has(existing.title)) {
-            const attachmentPath = path.join(paths.attachmentsDir, existing.title);
+            const attachmentPath = path.join(
+              paths.attachmentsDir,
+              existing.title,
+            );
             if (await fileExists(attachmentPath)) {
               await safeUnlink(attachmentPath);
             }
@@ -359,12 +508,14 @@ export class StorageSyncManager {
         }
       }
 
-      let updatedAttachments: AttachmentMeta[] = existingAttachments.filter(
+      const updatedAttachments: AttachmentMeta[] = existingAttachments.filter(
         (attachment) => !removed.includes(attachment.title),
       );
 
       const nowIso = new Date().toISOString();
-      const infoMap = new Map(filteredAttachments.map((info) => [info.title, info]));
+      const infoMap = new Map(
+        filteredAttachments.map((info) => [info.title, info]),
+      );
 
       for (const title of downloaded) {
         const info = infoMap.get(title);
@@ -375,7 +526,9 @@ export class StorageSyncManager {
         const data = await fs.readFile(attachmentPath);
         const sha256 = computeSha256(data);
 
-        const existingMetaEntry = existingAttachments.find((attachment) => attachment.title === title);
+        const existingMetaEntry = existingAttachments.find(
+          (attachment) => attachment.title === title,
+        );
 
         const metaEntry: AttachmentMeta = {
           id: info.id,
@@ -386,10 +539,14 @@ export class StorageSyncManager {
           sha256,
           mediaType: info.mediaType,
           fileSize: info.fileSize,
-          ...(existingMetaEntry?.lastUploadedAt && { lastUploadedAt: existingMetaEntry.lastUploadedAt }),
+          ...(existingMetaEntry?.lastUploadedAt && {
+            lastUploadedAt: existingMetaEntry.lastUploadedAt,
+          }),
         };
 
-        const existingIndex = updatedAttachments.findIndex((attachment) => attachment.title === title);
+        const existingIndex = updatedAttachments.findIndex(
+          (attachment) => attachment.title === title,
+        );
         if (existingIndex >= 0) {
           updatedAttachments[existingIndex] = metaEntry;
         } else {
@@ -414,12 +571,16 @@ export class StorageSyncManager {
         logFiles,
       };
     } catch (error) {
-      const errorLog = await this.writeLog(paths.logDir, `error-attachments-download-${Date.now()}.log`, {
-        event: "attachments_download",
-        status: "failed",
-        pageId,
-        error,
-      });
+      const errorLog = await this.writeLog(
+        paths.logDir,
+        `error-attachments-download-${Date.now()}.log`,
+        {
+          event: "attachments_download",
+          status: "failed",
+          pageId,
+          error,
+        },
+      );
       logFiles.push(errorLog);
       logger.error({
         event: "attachments_download",
@@ -441,18 +602,23 @@ export class StorageSyncManager {
     const pageId = ConfluenceClient.extractPageIdFromUrl(pageUrl);
     const paths = await this.preparePaths(pageId, inputDir);
 
-    const includeTitles = attachmentFilter?.includeTitles?.map((title) => title.trim());
-    const filterSet = includeTitles && includeTitles.length > 0
-      ? new Set(includeTitles)
-      : null;
+    const includeTitles = attachmentFilter?.includeTitles?.map((title) =>
+      title.trim(),
+    );
+    const filterSet =
+      includeTitles && includeTitles.length > 0 ? new Set(includeTitles) : null;
 
     const logFiles: string[] = [];
-    const startLog = await this.writeLog(paths.logDir, `upload-attachments-${Date.now()}.log`, {
-      event: "attachments_upload",
-      status: "started",
-      pageId,
-      filter: includeTitles ?? [],
-    });
+    const startLog = await this.writeLog(
+      paths.logDir,
+      `upload-attachments-${Date.now()}.log`,
+      {
+        event: "attachments_upload",
+        status: "started",
+        pageId,
+        filter: includeTitles ?? [],
+      },
+    );
     logFiles.push(startLog);
 
     const meta = await readJsonFile<PageMeta>(paths.metaFile);
@@ -473,7 +639,10 @@ export class StorageSyncManager {
     const updatedAttachments: AttachmentMeta[] = [...meta.attachments];
 
     for (const attachmentMeta of attachmentsToProcess) {
-      const attachmentPath = path.join(paths.attachmentsDir, attachmentMeta.title);
+      const attachmentPath = path.join(
+        paths.attachmentsDir,
+        attachmentMeta.title,
+      );
       if (!(await fileExists(attachmentPath))) {
         const missingLog = await this.writeLog(
           paths.logDir,
@@ -522,7 +691,9 @@ export class StorageSyncManager {
           lastUploadedAt: new Date().toISOString(),
         };
 
-        const index = updatedAttachments.findIndex((att) => att.title === attachmentMeta.title);
+        const index = updatedAttachments.findIndex(
+          (att) => att.title === attachmentMeta.title,
+        );
         if (index >= 0) {
           updatedAttachments[index] = newMeta;
         } else {
@@ -550,7 +721,9 @@ export class StorageSyncManager {
     const nextMeta: PageMeta = {
       ...meta,
       attachments: updatedAttachments,
-      ...(meta.lastAttachmentScanAt && { lastAttachmentScanAt: meta.lastAttachmentScanAt }),
+      ...(meta.lastAttachmentScanAt && {
+        lastAttachmentScanAt: meta.lastAttachmentScanAt,
+      }),
     };
 
     await writeJsonFile(paths.metaFile, nextMeta);
@@ -564,8 +737,13 @@ export class StorageSyncManager {
     };
   }
 
-  private async preparePaths(pageId: string, rootDir?: string): Promise<ConfluenceDataPaths> {
-    const baseDir = rootDir ? path.resolve(rootDir) : path.resolve("confluence-data");
+  private async preparePaths(
+    pageId: string,
+    rootDir?: string,
+  ): Promise<ConfluenceDataPaths> {
+    const baseDir = rootDir
+      ? path.resolve(rootDir)
+      : path.resolve("confluence-data");
     const pageDir = path.join(baseDir, sanitizePathSegment(pageId));
     const attachmentsDir = path.join(pageDir, "attachments");
     const logDir = path.join(baseDir, "log");
@@ -599,11 +777,21 @@ export class StorageSyncManager {
     return logFilePath;
   }
 
-  private maskSensitive(entry: Record<string, unknown>): Record<string, unknown> {
-    const sensitiveKeys = ["token", "password", "apitoken", "api_token", "email"];
+  private maskSensitive(
+    entry: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const sensitiveKeys = [
+      "token",
+      "password",
+      "apitoken",
+      "api_token",
+      "email",
+    ];
     const maskedEntry: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(entry)) {
-      if (sensitiveKeys.some((sensitive) => key.toLowerCase().includes(sensitive))) {
+      if (
+        sensitiveKeys.some((sensitive) => key.toLowerCase().includes(sensitive))
+      ) {
         maskedEntry[key] = "***MASKED***";
         continue;
       }
@@ -616,4 +804,3 @@ export class StorageSyncManager {
     return maskedEntry;
   }
 }
-
