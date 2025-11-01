@@ -104,6 +104,14 @@ export class StorageSyncManager {
     result = result.replace(/<\/colgroup><tbody>/g, "</colgroup>\n<tbody>");
     result = result.replace(/<\/colgroup><thead>/g, "</colgroup>\n<thead>");
 
+    // Step 12: p/h?/div の処理
+    result = result.replace(/><(p|h[1-6]|div [^>]+)>/g, ">\n      <$1>");
+    result = result.replace(/<\/(p|h[1-6]|div)><\/(td|th)>/g, "</$1>\n    </$2>");
+
+    // Step 13: ul/li の処理
+    result = result.replace(/><((?:li|ul)(?: [^>]+)?)>/g, ">\n      <$1>");
+    result = result.replace(/<\/(li|ul)><\//g, "</$1>\n    </");
+
     return result;
   }
 
@@ -161,6 +169,14 @@ export class StorageSyncManager {
     result = result.replace(/>\n<colgroup>/g, "><colgroup>");
     result = result.replace(/<\/colgroup>\n\s*<tbody>/g, "</colgroup><tbody>");
     result = result.replace(/<\/colgroup>\n\s*<thead>/g, "</colgroup><thead>");
+
+    // Step 12: p/h?/div の処理
+    result = result.replace(/>\n\s*<(p|h[1-6]|div [^>]+)>/g, "><$1>");
+    result = result.replace(/<\/(p|h[1-6]|div)>\n\s*<\/(td|th)>/g, "</$1></$2>");
+
+    // Step 13: ul/li の処理
+    result = result.replace(/>\n\s*<((?:li|ul)(?: [^>]+)?)>/g, "><$1>");
+    result = result.replace(/<\/(li|ul)>\n\s*<\//g, "</$1></");
 
     return result;
   }
