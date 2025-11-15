@@ -285,9 +285,10 @@ export class StorageSyncManager {
   async uploadBody(params: {
     pageUrl: string;
     inputDir?: string;
+    summary?: string;
     options?: IOOptions;
   }): Promise<BodyUploadResult> {
-    const { pageUrl, inputDir, options } = params;
+    const { pageUrl, inputDir, summary, options } = params;
     const pageId = ConfluenceClient.extractPageIdFromUrl(pageUrl);
     const paths = await this.preparePaths(pageId, inputDir);
 
@@ -346,6 +347,7 @@ export class StorageSyncManager {
           storageContent,
           remotePage.version.number,
           options,
+          summary,
         );
         updatedMeta = {
           ...updatedMeta,
