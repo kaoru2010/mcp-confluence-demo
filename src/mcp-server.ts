@@ -169,6 +169,11 @@ class ConfluenceMcpServer {
                   description:
                     "Optional base directory for storage files (defaults to confluence-data)",
                 },
+                summary: {
+                  type: "string",
+                  description:
+                    "Optional summary message for the version update (will be prefixed with 'mcp:')",
+                },
                 timeoutMs: {
                   type: "integer",
                   description: "Request timeout in milliseconds",
@@ -785,7 +790,7 @@ class ConfluenceMcpServer {
   }
 
   private async handleUploadBody(args: any): Promise<any> {
-    const { url, email, inputDir } = args;
+    const { url, email, inputDir, summary } = args;
 
     if (!url || typeof url !== "string") {
       throw new ValidationError(
@@ -802,12 +807,14 @@ class ConfluenceMcpServer {
       status: "started",
       target: `page/${pageId}`,
       inputDir,
+      hasSummary: !!summary,
     });
 
     const syncManager = new StorageSyncManager(config);
     const result = await syncManager.uploadBody({
       pageUrl: url,
       inputDir,
+      summary,
       options: {
         timeoutMs: args.timeoutMs,
       },
