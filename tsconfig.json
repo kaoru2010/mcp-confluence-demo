@@ -38,5 +38,6 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true
-  }
+  },
+  "exclude": ["tests", "vitest.config.ts", "dist", "node_modules"]
 }
