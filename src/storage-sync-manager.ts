@@ -35,7 +35,7 @@ interface AttachmentFilterOptions {
 export class StorageSyncManager {
   private client: ConfluenceClient;
 
-  constructor(private readonly config: ConfluenceConfig) {
+  constructor(readonly config: ConfluenceConfig) {
     this.client = new ConfluenceClient(config);
   }
 
@@ -106,7 +106,10 @@ export class StorageSyncManager {
 
     // Step 12: p/h?/div の処理
     result = result.replace(/><(p|h[1-6]|div [^>]+)>/g, ">\n      <$1>");
-    result = result.replace(/<\/(p|h[1-6]|div)><\/(td|th)>/g, "</$1>\n    </$2>");
+    result = result.replace(
+      /<\/(p|h[1-6]|div)><\/(td|th)>/g,
+      "</$1>\n    </$2>",
+    );
 
     // Step 13: ul/li の処理
     result = result.replace(/><((?:li|ul)(?: [^>]+)?)>/g, ">\n      <$1>");
@@ -172,7 +175,10 @@ export class StorageSyncManager {
 
     // Step 12: p/h?/div の処理
     result = result.replace(/>\n\s*<(p|h[1-6]|div [^>]+)>/g, "><$1>");
-    result = result.replace(/<\/(p|h[1-6]|div)>\n\s*<\/(td|th)>/g, "</$1></$2>");
+    result = result.replace(
+      /<\/(p|h[1-6]|div)>\n\s*<\/(td|th)>/g,
+      "</$1></$2>",
+    );
 
     // Step 13: ul/li の処理
     result = result.replace(/>\n\s*<((?:li|ul)(?: [^>]+)?)>/g, "><$1>");

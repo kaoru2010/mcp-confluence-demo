@@ -160,11 +160,48 @@ Operations can be cancelled via `AbortSignal`:
 - Axios automatically cancels HTTP requests on abort
 - All errors preserve original cause chain
 
+## Testing
+
+This project uses [Vitest](https://vitest.dev/) for unit testing.
+
+### Running Tests
+
+```bash
+# Run all tests
+pnpm test
+
+# Run tests in watch mode
+pnpm test:watch
+```
+
+### Test Coverage
+
+Tests are located in the `tests/` directory and cover:
+
+- **Markdown Converter**: Conversion between Confluence Storage Format and Markdown, image reference extraction, and macro replacement
+- **File Utilities**: File I/O operations, path sanitization, content type detection, and SHA256 computation
+
+### Writing Tests
+
+Tests use Vitest's mocking capabilities for file system operations. Example:
+
+```typescript
+import { describe, it, expect } from "vitest";
+import { someFunction } from "../src/some-module.js";
+
+describe("someFunction", () => {
+  it("should do something", () => {
+    expect(someFunction()).toBe(expected);
+  });
+});
+```
+
 ## Tools
 
 - Node.js: 22.13.1
 - pnpm: 10.11.1
 - TypeScript: 5.9.3
+- Vitest: 2.1.9
 - MCP SDK: 1.20.0
 - cheerio: 1.1.2
 - axios: 1.12.2

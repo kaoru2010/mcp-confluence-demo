@@ -5,6 +5,7 @@ build/
 .env
 .env.local
 .DS_Store
+.cursor/
 
 # Local AI context documentation (not for commit)
 docs-local/
